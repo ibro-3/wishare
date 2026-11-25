@@ -87,7 +87,19 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get
-      - run: flutter build apk --release
+      - name: Generate CI signing keystore
+        run: |
+          keytool -genkeypair -keystore wishare-ci.jks \
+            -storepass wishare123 -keypass wishare123 \
+            -alias wishare -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Wishare CI, OU=Wishare, O=Wishare, L=NA, ST=NA, C=US"
+      - name: Build release APK
+        run: flutter build apk --release
+        env:
+          WISHARE_KEYSTORE_PATH: ${{ github.workspace }}/wishare-ci.jks
+          WISHARE_STORE_PASSWORD: wishare123
+          WISHARE_KEY_ALIAS: wishare
+          WISHARE_KEY_PASSWORD: wishare123
       - name: Rename APK
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk \
