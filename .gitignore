@@ -1,0 +1,28 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+*.log
+
+# Local release artifacts are produced by CI; do not commit binaries.
+dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Platform build caches
+android/.gradle/
+android/local.properties
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# OS
+.DS_Store
+Thumbs.db

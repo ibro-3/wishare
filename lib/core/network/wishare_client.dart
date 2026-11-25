@@ -1,0 +1,219 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart';
+
+import '../models/manifest.dart';
+import 'protocol.dart';
+
+/// HTTPS sender. A peer's certificate fingerprint is verified on every
+/// connection (TOFU after pairing). Pairing additionally requires the PIN.
+class WishareClient {
+  WishareClient({
+    required this.host,
+    required this.port,
+    required this.expectedFingerprint,
+    this.senderId = '',
+    this.token = '',
+  });
+
+  final String host;
+  final int port;
+  final String expectedFingerprint;
+  String senderId;
+  String token;
+
+  Uri _uri(String path, [Map<String, String>? query]) => Uri(
+    scheme: WiProtocol.scheme,
+    host: host,
+    port: port,
+    path: path,
+    queryParameters: query,
+  );
+
+  HttpClient _client() {
+    final client = HttpClient()..connectionTimeout = WiProtocol.requestTimeout;
+    client.badCertificateCallback = (certificate, host, port) {
+      final observed = sha256.convert(certificate.der).toString().toUpperCase();
+      return normaliseFingerprint(observed) ==
+          normaliseFingerprint(expectedFingerprint);
+    };
+    return client;
+  }
+
+  Future<Map<String, dynamic>> info() async {
+    final client = _client();
+    try {
+      final request = await client.getUrl(_uri('/info'));
+      final response = await request.close();
+      return jsonDecode(utf8.decode(await _bytes(response)))
+          as Map<String, dynamic>;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Fetch a fingerprint for manual pairing. The user must compare it with
+  /// the fingerprint shown on the receiver before calling [pair].
+  static Future<String> fetchFingerprint(String host, int port) async {
+    final client = HttpClient()
+      ..connectionTimeout = WiProtocol.requestTimeout
+      ..badCertificateCallback = (cert, host, port) => true;
+    try {
+      final request = await client.getUrl(
+        Uri(scheme: WiProtocol.scheme, host: host, port: port, path: '/info'),
+      );
+      final response = await request.close();
+      final body = jsonDecode(
+        utf8.decode(await _bytes(response)),
+      ) as Map<String, dynamic>;
+      return normaliseFingerprint(body['fingerprint'] as String? ?? '');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<String> pair({
+    required String id,
+    required String name,
+    required String pin,
+  }) async {
+    senderId = id;
+    final result = await _jsonRequest(
+      'POST',
+      '/pair',
+      body: {'id': id, 'name': name, 'pin': pin},
+    );
+    token = result['token'] as String;
+    final returnedFingerprint = normaliseFingerprint(
+      result['fingerprint'] as String? ?? '',
+    );
+    if (returnedFingerprint != normaliseFingerprint(expectedFingerprint)) {
+      throw const FormatException('Certificate fingerprint mismatch');
+    }
+    return token;
+  }
+
+  Future<void> sendManifest(TransferManifest manifest) async {
+    await _jsonRequest('POST', '/request', body: manifest.toJson());
+  }
+
+  Future<({bool accepted, int transferredBytes, int offset})> status(
+    String transferId, {
+    String? relativePath,
+  }) async {
+    final query = <String, String>{'transferId': transferId};
+    if (relativePath != null) query['path'] = encodePath(relativePath);
+    final result = await _jsonRequest('GET', '/status', query: query);
+    return (
+      accepted: result['accepted'] as bool? ?? false,
+      transferredBytes: result['transferredBytes'] as int? ?? 0,
+      offset: result['offset'] as int? ?? 0,
+    );
+  }
+
+  Future<void> waitForAccept(
+    String transferId, {
+    Duration timeout = const Duration(minutes: 5),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final state = await status(transferId);
+      if (state.accepted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    throw TimeoutException('Receiver did not accept the transfer', timeout);
+  }
+
+  /// Send one file chunk. Returns the number of bytes acknowledged by the
+  /// receiver; a 409 response means the receiver's offset differs (resume).
+  Future<int> sendChunk({
+    required String transferId,
+    required String relativePath,
+    required int offset,
+    required Uint8List bytes,
+  }) async {
+    final client = _client();
+    try {
+      final request = await client.putUrl(
+        _uri('/chunk', {
+          'transferId': transferId,
+          'path': encodePath(relativePath),
+          'offset': '$offset',
+        }),
+      );
+      _applyHeaders(request);
+      request.add(bytes);
+      final response = await request.close();
+      final body = await _bytes(response);
+      if (response.statusCode != 200) {
+        throw HttpException(utf8.decode(body), uri: request.uri);
+      }
+      final result = jsonDecode(utf8.decode(body)) as Map<String, dynamic>;
+      return result['received'] as int? ?? bytes.length;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<void> complete(String transferId) =>
+      _jsonRequest('POST', '/complete', body: {'transferId': transferId});
+
+  Future<void> cancel(String transferId) => _jsonRequest(
+    'POST',
+    '/cancel',
+    body: {'transferId': transferId, 'action': 'cancel'},
+  );
+
+  void _applyHeaders(HttpClientRequest request) {
+    request.headers.set(WiProtocol.headerDeviceId, senderId);
+    request.headers.set(WiProtocol.headerToken, token);
+    request.headers.set(WiProtocol.headerFingerprint, expectedFingerprint);
+    request.headers.contentType = ContentType.json;
+  }
+
+  Future<Map<String, dynamic>> _jsonRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    Map<String, String>? query,
+  }) async {
+    final client = _client();
+    try {
+      final request = await (switch (method) {
+        'GET' => client.getUrl(_uri(path, query)),
+        'POST' => client.postUrl(_uri(path, query)),
+        _ => throw ArgumentError('Unsupported method $method'),
+      });
+      _applyHeaders(request);
+      if (body != null) {
+        request.add(jsonBytes(body));
+      }
+      final response = await request.close();
+      final bytes = await _bytes(response);
+      final decoded = bytes.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      if (response.statusCode >= 400) {
+        throw HttpException(
+          decoded['error'] as String? ??
+              'Request failed (${response.statusCode})',
+          uri: request.uri,
+        );
+      }
+      return decoded;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Future<Uint8List> _bytes(HttpClientResponse response) async {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in response) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  }
+}

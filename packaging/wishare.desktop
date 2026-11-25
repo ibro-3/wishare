@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Wishare
+GenericName=Local File Sharing
+Comment=Share files and folders with nearby devices on your LAN
+Exec=wishare
+Icon=wishare
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=share;files;lan;p2p;

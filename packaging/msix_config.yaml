@@ -1,0 +1,11 @@
+# Template for `flutter pub run msix:create` (add the `msix` dev dependency
+# before use). A signing certificate is required for distribution.
+displayName: Wishare
+publisherDisplayName: Ibro
+identityName: dev.ibro.wishare
+publisher: CN=YourPublisherName
+applicationId: dev.ibro.wishare
+version: 0.1.0.0
+minWindowsVersion: 10.0.19041.0
+outputPath: build/windows/x64/runner/Release
+description: LAN-only peer-to-peer file and folder sharing

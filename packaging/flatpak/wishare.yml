@@ -1,0 +1,24 @@
+# Template Flatpak manifest. Building requires the Flutter SDK in the sandbox
+# (or a prebuilt bundle source); see packaging/README.md.
+app-id: dev.ibro.wishare
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: wishare
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+modules:
+  - name: wishare
+    buildsystem: simple
+    build-commands:
+      - cp -a build/linux/x64/release/bundle/. /app/
+      - desktop-file-install --dir=/app/share/applications ../wishare.desktop
+      - install -Dm644 ../linux/icons/hicolor/256x256/apps/wishare.png /app/share/icons/hicolor/256x256/apps/wishare.png
+    sources:
+      - type: dir
+        path: ../..
