@@ -15,7 +15,6 @@ import 'features/settings/settings_screen.dart';
 import 'features/transfer/receive_screen.dart';
 import 'features/transfer/send_screen.dart';
 import 'features/transfer/transfers_screen.dart';
-import 'shared/widgets/directional_icon.dart';
 import 'shared/widgets/spring_reveal.dart';
 
 final appRouter = GoRouter(
@@ -69,6 +68,11 @@ CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
     transitionDuration: const Duration(milliseconds: 250),
     reverseTransitionDuration: const Duration(milliseconds: 200),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      // M3 top-level quick-fade; skipped entirely for system reduce-motion.
+      if (Theme.of(context).extension<WiMotionExtension>()?.reduceMotion ??
+          false) {
+        return child;
+      }
       final curved = CurvedAnimation(
         parent: animation,
         curve: const Cubic(0.05, 0.7, 0.1, 1),
@@ -86,7 +90,10 @@ class WishareApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings =
         ref.watch(settingsProvider).value ?? AppSettings.initial('');
-    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    // Read the platform setting from the view: MaterialApp inserts MediaQuery
+    // below itself, so maybeDisableAnimationsOf(context) is always null here.
+    final reduceMotion = MediaQueryData.fromView(View.of(context))
+        .disableAnimations;
 
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
@@ -213,22 +220,29 @@ class _AppShellState extends ConsumerState<AppShell> {
       body: SafeArea(child: widget.child),
     );
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
-            context.go('/send'),
-        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
-            context.go('/send'),
-        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
-            context.go('/send'),
-        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
-            context.go('/receive'),
-        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
-            context.go('/history'),
-        const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
-            context.go('/settings'),
-      },
-      child: shell,
+    return DefaultTabController(
+      // A new key rebuilds the controller when the route changes, keeping the
+      // tab bar in sync with go_router without a second source of truth.
+      key: ValueKey(_index),
+      length: 2,
+      initialIndex: _index,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+              context.go('/send'),
+          const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
+              context.go('/send'),
+          const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
+              context.go('/send'),
+          const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
+              context.go('/receive'),
+          const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
+              context.go('/history'),
+          const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
+              context.go('/settings'),
+        },
+        child: shell,
+      ),
     );
   }
 
@@ -237,6 +251,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         icon: WiSpringReveal(
+          enabled:
+              !(Theme.of(dialogContext)
+                      .extension<WiMotionExtension>()
+                      ?.reduceMotion ??
+                  false),
           spatial: WiSpring.fastSpatial,
           effects: WiSpring.fastEffects,
           child: CircleAvatar(
@@ -265,6 +284,3 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 }
-
-// Kept exported so feature screens can reuse the mirrored send icon.
-typedef WiSendIcon = WiDirectionalIcon;

@@ -1,6 +1,6 @@
+import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/physics.dart';
 
 import '../../core/theme/wishare_motion.dart';
 
@@ -46,17 +46,31 @@ class _WiSpringRevealState extends State<WiSpringReveal>
   @override
   void initState() {
     super.initState();
-    if (widget.enabled) {
-      _spatial = SpringSimulation(widget.spatial.description, 0.88, 1, 0);
-      _effects = SpringSimulation(widget.effects.description, 0, 1, 0);
-      _scale = 0.88;
-      _opacity = 0;
-      _ticker = createTicker(_tick)..start();
-    } else {
-      // Still create the simulations so late field reads stay safe.
-      _spatial = SpringSimulation(widget.spatial.description, 1, 1, 0);
-      _effects = SpringSimulation(widget.effects.description, 1, 1, 0);
-      _ticker = createTicker((_) {});
+    _spatial = SpringSimulation(widget.spatial.description, 0.88, 1, 0);
+    _effects = SpringSimulation(widget.effects.description, 0, 1, 0);
+    _scale = widget.enabled ? 0.88 : 1;
+    _opacity = widget.enabled ? 0 : 1;
+    _ticker = createTicker(_tick);
+    if (widget.enabled) _ticker.start();
+  }
+
+  @override
+  void didUpdateWidget(covariant WiSpringReveal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) {
+      _startedAt = null;
+      _finished = false;
+      if (widget.enabled) {
+        _spatial = SpringSimulation(widget.spatial.description, 0.88, 1, 0);
+        _effects = SpringSimulation(widget.effects.description, 0, 1, 0);
+        _scale = 0.88;
+        _opacity = 0;
+        _ticker.start();
+      } else {
+        _ticker.stop();
+        _scale = 1;
+        _opacity = 1;
+      }
     }
   }
 

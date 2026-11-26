@@ -148,7 +148,11 @@ class ReceiveScreen extends ConsumerWidget {
                       style: text.bodySmall,
                     ),
                     const SizedBox(height: 8),
-                    LinearProgressIndicator(value: transfer.progress),
+                    Semantics(
+                      label: 'Transfer progress',
+                      value: '${(transfer.progress * 100).round()} percent',
+                      child: LinearProgressIndicator(value: transfer.progress),
+                    ),
                   ],
                 ),
                 trailing: IconButton(

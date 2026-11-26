@@ -26,6 +26,16 @@ void main() {
     expect(emphasized.fontSize, theme.textTheme.labelLarge?.fontSize);
   });
 
+  test('dark theme body text uses onSurface, not surface', () {
+    final theme = WishareTheme.build(
+      WishareTheme.baseline(Brightness.dark),
+      contrast: WiContrast.standard,
+      reduceMotion: false,
+    );
+    expect(theme.textTheme.bodyLarge?.color, theme.colorScheme.onSurface);
+    expect(theme.textTheme.bodyLarge?.color, isNot(theme.colorScheme.surface));
+  });
+
   test('all emphasized token sizes and weights match the published scale', () {
     final emphasized = WiType.emphasized(
       WiType.applyTokens(Typography.material2021().black),

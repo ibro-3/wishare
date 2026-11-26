@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/physics.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme/wishare_motion.dart';
 
@@ -66,6 +66,22 @@ class _WiLoadingIndicatorState extends State<WiLoadingIndicator>
     _simulation = _makeSimulation();
     _ticker = createTicker(_tick);
     if (!widget.reduceMotion) _ticker.start();
+  }
+
+  @override
+  void didUpdateWidget(covariant WiLoadingIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reduceMotion != widget.reduceMotion) {
+      _index = 0;
+      _t = 0;
+      _segmentStart = null;
+      _simulation = _makeSimulation();
+      if (widget.reduceMotion) {
+        _ticker.stop();
+      } else {
+        _ticker.start();
+      }
+    }
   }
 
   SpringSimulation _makeSimulation() =>

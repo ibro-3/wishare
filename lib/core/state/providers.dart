@@ -42,9 +42,16 @@ class SettingsController extends AsyncNotifier<AppSettings> {
     final current = state.value;
     if (current == null) return;
     final next = change(current);
-    state = AsyncData(next);
     final store = await ref.read(storeProvider.future);
-    await store.saveSettings(next);
+    try {
+      // Persist before publishing so listeners never observe unsaved settings.
+      await store.saveSettings(next);
+    } on Object {
+      // Rollback: the previous value remains published.
+      state = AsyncData(current);
+      rethrow;
+    }
+    state = AsyncData(next);
   }
 }
 
@@ -79,24 +86,45 @@ class PeersController extends AsyncNotifier<List<Peer>> {
             );
     }
     final next = byId.values.toList()
-      ..sort(
-        (a, b) => (b.lastSeen?.compareTo(a.lastSeen ?? DateTime.now()) ?? 0),
-      );
+      ..sort((a, b) {
+        final aSeen = a.lastSeen ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bSeen = b.lastSeen ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final byTime = bSeen.compareTo(aSeen);
+        // Tie-break on a stable key: never use DateTime.now() in a comparator.
+        return byTime != 0 ? byTime : a.id.compareTo(b.id);
+      });
     state = AsyncData(next);
     await _save(next);
   }
 
-  Future<void> markPaired(String id, String name) async {
-    final identity = await ref.read(identityProvider.future);
+  /// [fingerprint] is the sender identity observed during pairing. Never pin
+  /// our own certificate here: that would make every sender look trusted.
+  Future<void> markPaired(String id, String name, {String? fingerprint}) async {
+    final observed = fingerprint != null && isValidFingerprint(fingerprint)
+        ? normaliseFingerprint(fingerprint)
+        : null;
+    final pairedAt = DateTime.now();
     final next = (state.value ?? const <Peer>[]).map((peer) {
       if (peer.id != id) return peer;
-      return peer.copyWith(
+      final existing = peer.certificateFingerprint;
+      final trustedFingerprint =
+          observed ??
+          (existing != null && isValidFingerprint(existing)
+              ? normaliseFingerprint(existing)
+              : null);
+      // Construct explicitly so no pinned certificate from a previous record
+      // (or from our own identity) can survive.
+      return Peer(
+        id: peer.id,
         name: name,
-        certificateFingerprint:
-            peer.certificateFingerprint ?? identity.fingerprint,
-        pinnedCertificate: identity.certificatePem,
-        pairedAt: DateTime.now(),
+        address: peer.address,
+        port: peer.port,
+        colorSeed: peer.colorSeed,
+        certificateFingerprint: trustedFingerprint,
+        sessionToken: peer.sessionToken,
         pairingMethod: PairingMethod.qr,
+        pairedAt: pairedAt,
+        lastSeen: peer.lastSeen,
         trustLevel: TrustLevel.paired,
       );
     }).toList();
@@ -134,7 +162,7 @@ class TransfersController extends AsyncNotifier<List<Transfer>> {
       ...(state.value ?? const <Transfer>[]).where(
         (existing) => existing.id != transfer.id,
       ),
-    ];
+    ].take(200).toList();
     state = AsyncData(next);
     await _save(next);
   }
@@ -180,8 +208,10 @@ final networkProvider = AsyncNotifierProvider<NetworkController, NetworkState>(
 class NetworkController extends AsyncNotifier<NetworkState> {
   @override
   Future<NetworkState> build() async {
-    final identity = await ref.watch(identityProvider.future);
-    final settings = await ref.watch(settingsProvider.future);
+    final identity = await ref.read(identityProvider.future);
+    // One-time snapshot: toggling a setting must not rebuild (and dispose) the
+    // bound HTTPS server or discovery in the middle of a transfer.
+    final settings = await ref.read(settingsProvider.future);
     final server = WishareServer(
       identity: identity,
       downloadDirectory: settings.downloadDirectory ?? '',
@@ -191,10 +221,28 @@ class NetworkController extends AsyncNotifier<NetworkState> {
       enabled: settings.discoveryEnabled,
       broadcast: settings.broadcastEnabled,
     );
-    await server.start();
-    await discovery.start();
 
-    final subscriptions = <StreamSubscription<dynamic>>[
+    final subscriptions = <StreamSubscription<dynamic>>[];
+    // Register cleanup before any resource is acquired so a partial startup
+    // failure cannot leave a bound port or a live subscription behind.
+    ref.onDispose(() {
+      for (final subscription in subscriptions) {
+        subscription.cancel();
+      }
+      unawaited(discovery.dispose());
+      unawaited(server.dispose());
+    });
+
+    try {
+      await server.start();
+      await discovery.start();
+    } on Object {
+      await discovery.stop();
+      await server.dispose();
+      rethrow;
+    }
+
+    subscriptions.addAll([
       discovery.peers.listen((peers) {
         ref.read(peersProvider.notifier).merge(peers);
       }),
@@ -204,6 +252,7 @@ class NetworkController extends AsyncNotifier<NetworkState> {
           Notifications.showIncomingOffer(
             manifest.senderName,
             manifest.fileCount,
+            transferId: manifest.transferId,
           );
         }
         ref
@@ -230,17 +279,24 @@ class NetworkController extends AsyncNotifier<NetworkState> {
             .markPaired(
               event['id'] as String,
               event['name'] as String? ?? 'Wishare device',
+              fingerprint: event['fingerprint'] as String?,
             );
       }),
-    ];
-    ref.onDispose(() {
-      for (final subscription in subscriptions) {
-        subscription.cancel();
-      }
-      discovery.stop();
-      server.dispose();
-    });
+    ]);
     return NetworkState(server: server, discovery: discovery);
+  }
+
+  /// Apply changed settings to the running network services without rebuilding
+  /// this controller (which would drop in-flight transfers).
+  Future<void> applySettings(AppSettings settings) async {
+    final current = state.value;
+    if (current == null) return;
+    current.server.updateDownloadDirectory(settings.downloadDirectory ?? '');
+    current.discovery.applySettings(
+      discoveryEnabled: settings.discoveryEnabled,
+      broadcastEnabled: settings.broadcastEnabled,
+    );
+    state = AsyncData(current.copyWith());
   }
 
   /// Sender side: verify the receiver certificate, redeem the PIN, and store
@@ -251,6 +307,7 @@ class NetworkController extends AsyncNotifier<NetworkState> {
       host: payload.host,
       port: payload.port,
       expectedFingerprint: payload.fingerprint,
+      senderFingerprint: identity.fingerprint,
     );
     final info = await client.info();
     await client.pair(id: identity.id, name: identity.name, pin: payload.pin);

@@ -176,8 +176,6 @@ class CertificateManager {
     await _prefs.setString(_keyKey, identity.privateKeyPem);
   }
 
-  Future<void> rename(String name) => _prefs.setString(_keyName, name);
-
   static String fingerprintOfCertificate(String pem) {
     final der = _decodePem(pem, 'CERTIFICATE');
     return sha256.convert(der).toString().toUpperCase();
@@ -203,7 +201,8 @@ class CertificateManager {
       elements: [
         ASN1Integer(BigInt.one),
         ASN1OctetString(octets: _fixed32(key.d!)),
-        // RFC 5915: publicKey is an explicit [0] BIT STRING, not a plain one.
+        // RFC 5915: publicKey is an optional context-specific [1] BIT STRING.
+        // It is emitted as an explicit [1] wrapper around the DER BIT STRING.
         _RawAsn1(
           _contextOneBitString((key.parameters!.G * key.d!)!.getEncoded(false)),
         ),
@@ -255,11 +254,12 @@ class CertificateManager {
   }
 }
 
-/// RFC 5915 encodes the optional public key as `[1] IMPLICIT BIT STRING`.
+/// Wraps a DER BIT STRING in an explicit context-specific [1] element.
+/// This is the form used for the RFC 5915 optional public key here.
 Uint8List _contextOneBitString(List<int> bytes) {
   final bitString = ASN1BitString(stringValues: bytes).encode();
-  // Strip the universal BIT STRING tag+length, keep the unused-bits byte and
-  // point, then re-tag as context-specific [1].
+  // Keep the complete encoded BIT STRING (tag, length and value) and prefix
+  // it with the explicit [1] tag and its length.
   return Uint8List.fromList([0xA1, bitString.length, ...bitString]);
 }
 

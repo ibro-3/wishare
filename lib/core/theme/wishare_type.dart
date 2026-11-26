@@ -19,7 +19,10 @@ class WiEmphasis extends ThemeExtension<WiEmphasis> {
   WiEmphasis copyWith({TextTheme? text}) => WiEmphasis(text ?? this.text);
 
   @override
-  WiEmphasis lerp(WiEmphasis? other, double t) => this;
+  WiEmphasis lerp(WiEmphasis? other, double t) {
+    if (other is! WiEmphasis) return this;
+    return t < 0.5 ? this : other;
+  }
 }
 
 extension WiTypeContext on BuildContext {

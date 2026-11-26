@@ -8,8 +8,8 @@ import 'package:tray_manager/legacy.dart';
 import 'package:window_manager/legacy.dart';
 
 /// Desktop shell setup: window sizing plus a system-tray icon and menu.
-/// My design decision: close-to-tray interception is deferred; the tray keeps
-/// a visible "Show Wishare" affordance and an explicit exit action.
+/// Close-to-tray interception is implemented: the window hides and the tray
+/// keeps a visible "Show Wishare" affordance plus an explicit exit action.
 abstract final class DesktopPlatform {
   static Future<void> initialize() async {
     final desktop = Platform.isLinux || Platform.isWindows;
@@ -19,10 +19,20 @@ abstract final class DesktopPlatform {
     final prefs = await SharedPreferences.getInstance();
     final savedWidth = prefs.getDouble('window.width');
     final savedHeight = prefs.getDouble('window.height');
+    var startMinimized = false;
     final settingsRaw = prefs.getString('settings');
-    final startMinimized = settingsRaw == null
-        ? false
-        : (jsonDecode(settingsRaw)['startMinimized'] as bool? ?? false);
+    if (settingsRaw != null) {
+      try {
+        final decoded = jsonDecode(settingsRaw);
+        if (decoded is Map<String, dynamic>) {
+          startMinimized = decoded['startMinimized'] is bool
+              ? decoded['startMinimized'] as bool
+              : false;
+        }
+      } on Object {
+        // Corrupt settings must not prevent the window from appearing.
+      }
+    }
     const options = WindowOptions(
       size: Size(1100, 720),
       minimumSize: Size(600, 480),

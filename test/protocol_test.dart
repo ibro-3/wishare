@@ -2,12 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wishare/core/network/protocol.dart';
 
 void main() {
+  const fingerprint =
+      'ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789';
+
   test('QR payload round-trips host, fingerprint and PIN', () {
     const payload = PairingPayload(
       host: '192.168.1.20',
       port: 45821,
       name: 'Living room PC',
-      fingerprint: 'ABCDEF0123456789',
+      fingerprint: fingerprint,
       pin: '123456',
     );
     final parsed = PairingPayload.fromUri(Uri.parse(payload.toQrUri()));
@@ -37,5 +40,40 @@ void main() {
 
   test('fingerprints ignore spacing and case', () {
     expect(normaliseFingerprint('ab:cd ef-01'), 'ABCDEF01');
+  });
+
+  test('rejects malformed pairing QR codes', () {
+    PairingPayload payload({
+      String host = '192.168.1.20',
+      int port = 45821,
+      String fp = fingerprint,
+      String pin = '123456',
+    }) => PairingPayload(
+      host: host,
+      port: port,
+      name: 'PC',
+      fingerprint: fp,
+      pin: pin,
+    );
+    for (final bad in [
+      payload(host: ''),
+      payload(port: 0),
+      payload(port: 70000),
+      payload(fp: 'NOT-HEX'),
+      payload(pin: 'abc'),
+    ]) {
+      expect(
+        () => PairingPayload.fromUri(Uri.parse(bad.toQrUri())),
+        throwsFormatException,
+      );
+    }
+  });
+
+  test('fingerprint helpers are safe on short or malformed input', () {
+    expect(isValidFingerprint(fingerprint), isTrue);
+    expect(isValidFingerprint('ABCDEF'), isFalse);
+    expect(abbreviateFingerprint(''), '—');
+    expect(abbreviateFingerprint('AB'), 'AB');
+    expect(abbreviateFingerprint(fingerprint), 'ABCDEF01…23456789');
   });
 }

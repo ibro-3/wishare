@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../core/network/protocol.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/wishare_type.dart';
 import '../../shared/widgets/loading_indicator.dart';
@@ -82,8 +83,7 @@ class PairingScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Certificate ${payload.fingerprint.substring(0, 8)}…'
-                        '${payload.fingerprint.substring(payload.fingerprint.length - 8)}',
+                        'Certificate ${abbreviateFingerprint(payload.fingerprint)}',
                         style: text.bodySmall,
                         textAlign: TextAlign.center,
                       ),

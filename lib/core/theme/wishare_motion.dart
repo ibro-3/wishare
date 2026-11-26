@@ -24,15 +24,4 @@ enum WiSpring {
     stiffness: stiffness,
     ratio: damping,
   );
-
-  /// Advance an animation value from [from] towards [to] over [elapsed].
-  double evaluate({
-    required double from,
-    required double to,
-    required double velocity,
-    required Duration elapsed,
-  }) {
-    final simulation = SpringSimulation(description, from, to, velocity);
-    return simulation.x(elapsed.inMilliseconds / 1000);
-  }
 }

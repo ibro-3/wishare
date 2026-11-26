@@ -20,8 +20,12 @@ void main() {
     );
     final transforms = tester.widgetList<Transform>(find.byType(Transform));
     expect(
-      transforms.any((transform) => transform.transform.storage[0] == -1),
-      isTrue, // 180° flip on X
+      transforms.any(
+        (transform) =>
+            transform.transform.storage[0] == -1 &&
+            transform.transform.storage[5] == 1,
+      ),
+      isTrue, // horizontal mirror only, no vertical flip
     );
   });
 

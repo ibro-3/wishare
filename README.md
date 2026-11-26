@@ -7,7 +7,7 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.1 foundation)
+## Current status (v0.1.1)
 
 Implemented:
 
@@ -15,8 +15,8 @@ Implemented:
   published tokens, colour-role mapping, dynamic colour with static baseline
   fallback, contrast levels, and spring values mapped to Flutter's
   `SpringSimulation`.
-- Adaptive shell: flexible navigation bar on compact/medium, navigation rail
-  on expanded widths; bottom sheets on phones, dialogs on desktop.
+- Adaptive shell: Send and Receive tabs on every screen size, with History and
+  Settings in the app bar; bottom sheets on phones, dialogs on desktop.
 - Device discovery via a DNS-SD mDNS responder (`_wishare._tcp.local`) plus a
   UDP broadcast heartbeat, with manual IP/QR fallback.
 - Self-signed P-256 certificate generation and TOFU fingerprint pinning.
@@ -27,14 +27,12 @@ Implemented:
   intent intake; desktop window setup with a tray icon and menu.
 - Persistent peers, transfers and settings via `shared_preferences` + JSON.
 
-Not yet implemented (see the plan in `~/.opencode/plan/wishare-plan.md`):
+Still out of scope for v0.1:
 
-- mDNS responder advertisement (discovery currently uses broadcast + manual).
-- System-tray integration and close-to-tray on desktop.
-- Installers / signing, share-intent receiver ("Share to Wishare" on Android).
-- Release builds/installers and a full manual accessibility audit. Android
-  share-intent intake and the desktop tray icon/menu are implemented; close-to-
-  tray window interception is deferred.
+- Packaged installers/signing (release CI attaches zips and APKs; MSIX and deb
+  packaging templates live in `packaging/`).
+- A full manual accessibility audit (semantics are in place, but not audited
+  on screen readers).
 
 ## Run
 
@@ -53,17 +51,19 @@ flutter build linux --release
 # flutter build windows --release  (Windows host required)
 ```
 
-Publishing a GitHub release (v0.1.0):
+Publishing a GitHub release (v0.1.1):
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.1 && git push origin v0.1.1
 ```
 
 `.github/workflows/release.yml` builds Windows, Linux and Android in parallel,
-then attaches `wishare-0.1.0-windows-x64.zip`, `wishare-0.1.0-linux-x64.zip`,
-`wishare-0.1.0-android.apk` and `SHA256SUMS.txt` to the release. The workflow
-can also be started manually with `workflow_dispatch` and a tag name. Locally
-built Linux/Android assets are in `dist/` (Windows is produced by CI).
+then attaches `wishare-0.1.1-windows-x64.zip`, `wishare-0.1.1-linux-x64.zip`,
+`wishare-0.1.1-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
+release. The workflow can also be started manually with `workflow_dispatch` and
+a tag name. Locally
+`dist/` holds the previous v0.1.0 local assets; v0.1.1 assets are produced by
+CI when the tag is pushed.
 
 Tests and CI:
 

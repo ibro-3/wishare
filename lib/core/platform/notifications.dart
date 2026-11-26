@@ -43,11 +43,19 @@ abstract final class Notifications {
     }
   }
 
-  static Future<void> showIncomingOffer(String sender, int itemCount) async {
+  /// [transferId] makes the notification id stable and unique per offer.
+  /// It is optional so older positional call sites keep working.
+  static Future<void> showIncomingOffer(
+    String sender,
+    int itemCount, {
+    String? transferId,
+  }) async {
     if (!_initialized) return;
     try {
       await _plugin.show(
-        id: itemCount.hashCode,
+        id: (transferId == null || transferId.isEmpty)
+            ? itemCount.hashCode
+            : transferId.hashCode,
         title: 'Incoming from $sender',
         body: '$itemCount items waiting for your approval',
         notificationDetails: const NotificationDetails(

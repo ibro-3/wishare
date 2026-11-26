@@ -22,7 +22,15 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   final _port = TextEditingController(text: '${WiProtocol.port}');
   final _pin = TextEditingController();
   final _fingerprint = TextEditingController();
-  late final MobileScannerController _controller;
+  MobileScannerController? _controller;
+
+  /// Created only when the camera view is first needed, so manual-entry mode
+  /// never triggers a camera permission prompt.
+  MobileScannerController get _scannerController {
+    return _controller ??= MobileScannerController(
+      formats: const [BarcodeFormat.qrCode],
+    );
+  }
 
   @override
   void initState() {
@@ -31,9 +39,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     _host.text = query['host'] ?? '';
     _port.text = query['port'] ?? '${WiProtocol.port}';
     _manual = _host.text.isNotEmpty;
-    _controller = MobileScannerController(
-      formats: const [BarcodeFormat.qrCode],
-    );
   }
 
   @override
@@ -42,7 +47,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     _port.dispose();
     _pin.dispose();
     _fingerprint.dispose();
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -72,7 +77,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     return Stack(
       children: [
         MobileScanner(
-          controller: _controller,
+          controller: _scannerController,
           onDetect: (capture) {
             if (_busy) return;
             for (final barcode in capture.barcodes) {
@@ -176,24 +181,36 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         _host.text.trim(),
         int.tryParse(_port.text.trim()) ?? WiProtocol.port,
       );
+      if (!mounted) return;
       setState(() => _fingerprint.text = fingerprint);
     } on Object catch (error) {
+      if (!mounted) return;
       setState(() => _error = 'Could not reach device: $error');
     }
   }
 
   Future<void> _pairManually() async {
     final fingerprint = normaliseFingerprint(_fingerprint.text.trim());
-    if (fingerprint.isEmpty) {
+    if (!isValidFingerprint(fingerprint)) {
       setState(
-        () => _error = 'Fetch or enter the certificate fingerprint first',
+        () => _error = 'Enter a valid 64-character certificate fingerprint',
       );
+      return;
+    }
+    final host = _host.text.trim();
+    if (host.isEmpty) {
+      setState(() => _error = 'Enter the other device’s IP address');
+      return;
+    }
+    final port = int.tryParse(_port.text.trim());
+    if (port == null || port <= 0 || port > 65535) {
+      setState(() => _error = 'Enter a valid port number');
       return;
     }
     await _confirm(
       PairingPayload(
-        host: _host.text.trim(),
-        port: int.tryParse(_port.text.trim()) ?? WiProtocol.port,
+        host: host,
+        port: port,
         name: 'Wishare device',
         fingerprint: fingerprint,
         pin: _pin.text.trim(),
@@ -215,8 +232,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
             Text('Address: ${payload.host}:${payload.port}'),
             const SizedBox(height: 8),
             Text(
-              'Certificate ${payload.fingerprint.substring(0, 8)}…'
-              '${payload.fingerprint.substring(payload.fingerprint.length - 8)}',
+              'Certificate ${abbreviateFingerprint(payload.fingerprint)}',
               style: Theme.of(dialogContext).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -246,8 +262,9 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     try {
       await ref.read(networkProvider.notifier).pairWith(payload);
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Device paired successfully')),
       );
     } on Object catch (error) {

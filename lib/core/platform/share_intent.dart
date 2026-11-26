@@ -37,7 +37,8 @@ abstract final class ShareIntents {
         .map((file) => file.path)
         .toList();
     if (paths.isEmpty) return;
-    pending.value = paths;
+    // Several share intents can arrive back to back; keep earlier paths.
+    pending.value = [...pending.value, ...paths];
     onFiles?.call(paths);
   }
 

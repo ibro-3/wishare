@@ -26,6 +26,7 @@ class SendScreen extends ConsumerStatefulWidget {
 class _SendScreenState extends ConsumerState<SendScreen> {
   final _selected = <SelectedEntry>[];
   Peer? _peer;
+  String? _requestedPeerId;
   bool _busy = false;
   double _progress = 0;
   String? _error;
@@ -34,14 +35,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   void initState() {
     super.initState();
-    final peerId = GoRouterState.of(context).uri.queryParameters['peerId'];
-    final peers = ref.read(peersProvider).value ?? const <Peer>[];
-    if (peerId != null) {
-      for (final peer in peers) {
-        if (peer.id == peerId) _peer = peer;
-      }
-    }
-    _peer ??= _firstPaired(peers);
+    // peersProvider is usually still AsyncLoading here, so only remember the
+    // requested id and resolve it against the paired list in build().
+    _requestedPeerId = GoRouterState.of(context).uri.queryParameters['peerId'];
     for (final path in ShareIntents.takePending()) {
       if (!File(path).existsSync()) continue;
       _selected.add(
@@ -54,17 +50,28 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     }
   }
 
-  Peer? _firstPaired(List<Peer> peers) {
-    for (final peer in peers) {
-      if (peer.isPaired) return peer;
-    }
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     final peers = ref.watch(peersProvider).value ?? const <Peer>[];
     final paired = peers.where((peer) => peer.isPaired).toList();
+    // Resolve the effective peer now that peers are available. An unknown or
+    // unpaired peerId from the query string is ignored in favour of the first
+    // paired device.
+    if (paired.isEmpty) {
+      _peer = null;
+    } else if (_peer == null || !paired.contains(_peer)) {
+      Peer? requested;
+      final peerId = _requestedPeerId;
+      if (peerId != null) {
+        for (final peer in paired) {
+          if (peer.id == peerId) {
+            requested = peer;
+            break;
+          }
+        }
+      }
+      _peer = requested ?? paired.first;
+    }
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final total = _selected.fold<int>(0, (sum, entry) => sum + entry.size);
@@ -89,9 +96,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             )
           else
             DropdownButtonFormField<Peer>(
-              initialValue: _peer != null && paired.contains(_peer)
-                  ? _peer
-                  : paired.first,
+              initialValue: _peer,
               decoration: const InputDecoration(labelText: 'Device'),
               items: [
                 for (final peer in paired)
@@ -229,7 +234,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
 
   Future<void> _pickFiles() async {
     final files = await FilePicker.pickFiles();
-    if (files.isEmpty) return;
+    if (files.isEmpty || !mounted) return;
     setState(() {
       for (final file in files) {
         if (file.path == null) continue;
@@ -247,13 +252,16 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   Future<void> _pickFolder() async {
     final uri = await FilePicker.pickDirectory();
     final path = uri != null && uri.scheme == 'file' ? uri.toFilePath() : null;
-    if (path == null) return;
+    if (path == null || !mounted) return;
     final settings = await ref.read(settingsProvider.future);
+    if (!mounted) return;
     final coordinator = TransferCoordinator(settings);
     try {
       final entries = await coordinator.collect([path]);
+      if (!mounted) return;
       setState(() => _selected.addAll(entries));
     } on Object catch (error) {
+      if (!mounted) return;
       setState(() => _error = 'Could not read folder: $error');
     }
   }
@@ -265,6 +273,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       _progress = 0;
       _status = 'Connecting';
     });
+    Transfer? transfer;
     try {
       final peer = _peer!;
       final identity = await ref.read(identityProvider.future);
@@ -283,26 +292,29 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         senderId: identity.id,
         token: peer.sessionToken ?? '',
       );
-      await ref
-          .read(transfersProvider.notifier)
-          .upsert(
-            Transfer(
-              id: transferId,
-              direction: TransferDirection.outgoing,
-              peerId: peer.id,
-              peerName: peer.name,
-              files: manifest.entries,
-              totalBytes: manifest.totalBytes,
-              createdAt: DateTime.now(),
-              status: TransferStatus.connecting,
-            ),
-          );
+      // Keep one Transfer instance so createdAt never churns; every later
+      // update is a copyWith of this original object.
+      final activeTransfer = Transfer(
+        id: transferId,
+        direction: TransferDirection.outgoing,
+        peerId: peer.id,
+        peerName: peer.name,
+        files: manifest.entries,
+        totalBytes: manifest.totalBytes,
+        createdAt: DateTime.now(),
+        status: TransferStatus.connecting,
+      );
+      transfer = activeTransfer;
+      await ref.read(transfersProvider.notifier).upsert(activeTransfer);
       await client.sendManifest(manifest);
       if (!mounted) return;
       setState(() => _status = 'Waiting for the receiver');
       await client.waitForAccept(transferId);
       if (!mounted) return;
       setState(() => _status = 'Transferring');
+      ref
+          .read(transfersProvider.notifier)
+          .upsert(activeTransfer.copyWith(status: TransferStatus.transferring));
       await coordinator.send(
         client: client,
         manifest: manifest,
@@ -318,14 +330,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           ref
               .read(transfersProvider.notifier)
               .upsert(
-                Transfer(
-                  id: transferId,
-                  direction: TransferDirection.outgoing,
-                  peerId: peer.id,
-                  peerName: peer.name,
-                  files: manifest.entries,
-                  totalBytes: manifest.totalBytes,
-                  createdAt: DateTime.now(),
+                activeTransfer.copyWith(
                   status: TransferStatus.transferring,
                   transferredBytes: transferred,
                   speedBytesPerSecond: speed,
@@ -336,29 +341,42 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       await ref
           .read(transfersProvider.notifier)
           .upsert(
-            Transfer(
-              id: transferId,
-              direction: TransferDirection.outgoing,
-              peerId: peer.id,
-              peerName: peer.name,
-              files: manifest.entries,
-              totalBytes: manifest.totalBytes,
-              createdAt: DateTime.now(),
+            activeTransfer.copyWith(
               status: TransferStatus.completed,
               transferredBytes: manifest.totalBytes,
               finishedAt: DateTime.now(),
             ),
           );
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       context.go('/receive');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Transfer complete')));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Transfer complete')),
+      );
     } on Object catch (error) {
+      final message = _transferErrorMessage(error);
+      final failed = transfer?.copyWith(
+        status: TransferStatus.failed,
+        error: message,
+        finishedAt: DateTime.now(),
+      );
+      if (failed != null) {
+        await ref.read(transfersProvider.notifier).upsert(failed);
+      }
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Transfer failed: $error';
+        _error = 'Transfer failed: $message';
       });
     }
+  }
+
+  String _transferErrorMessage(Object error) {
+    if (error is TransferDeclinedException) {
+      return error.status == 'cancelled'
+          ? 'The receiver cancelled the transfer'
+          : 'The receiver declined the transfer';
+    }
+    return error.toString();
   }
 }

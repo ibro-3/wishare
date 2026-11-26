@@ -8,6 +8,21 @@ import 'package:crypto/crypto.dart';
 import '../models/manifest.dart';
 import 'protocol.dart';
 
+/// Thrown by [WishareClient.waitForAccept] when the receiver declines or
+/// cancels an offer instead of accepting it. The UI should finalize the
+/// outgoing transfer rather than treating this as a generic failure.
+class TransferDeclinedException implements Exception {
+  const TransferDeclinedException(this.transferId, {this.status});
+
+  final String transferId;
+  final String? status;
+
+  @override
+  String toString() => status == null || status!.isEmpty
+      ? 'Transfer $transferId was declined'
+      : 'Transfer $transferId ended with status $status';
+}
+
 /// HTTPS sender. A peer's certificate fingerprint is verified on every
 /// connection (TOFU after pairing). Pairing additionally requires the PIN.
 class WishareClient {
@@ -17,11 +32,16 @@ class WishareClient {
     required this.expectedFingerprint,
     this.senderId = '',
     this.token = '',
+    this.senderFingerprint = '',
   });
 
   final String host;
   final int port;
   final String expectedFingerprint;
+
+  /// Our own certificate fingerprint, sent to the receiver during pairing so
+  /// it can pin our identity rather than its own.
+  final String senderFingerprint;
   String senderId;
   String token;
 
@@ -100,19 +120,30 @@ class WishareClient {
     await _jsonRequest('POST', '/request', body: manifest.toJson());
   }
 
-  Future<({bool accepted, int transferredBytes, int offset})> status(
-    String transferId, {
-    String? relativePath,
-  }) async {
+  Future<
+    ({
+      bool accepted,
+      int transferredBytes,
+      int offset,
+      bool declined,
+      String? status,
+    })
+  >
+  status(String transferId, {String? relativePath}) async {
     final query = <String, String>{'transferId': transferId};
     if (relativePath != null) query['path'] = encodePath(relativePath);
     final result = await _jsonRequest('GET', '/status', query: query);
     return (
-      accepted: result['accepted'] as bool? ?? false,
-      transferredBytes: result['transferredBytes'] as int? ?? 0,
-      offset: result['offset'] as int? ?? 0,
+      accepted: result['accepted'] is bool ? result['accepted'] as bool : false,
+      transferredBytes: _asInt(result['transferredBytes']),
+      offset: _asInt(result['offset']),
+      declined: result['declined'] is bool ? result['declined'] as bool : false,
+      status: result['status'] as String?,
     );
   }
+
+  static int _asInt(Object? value) =>
+      value is int ? value : (value is num ? value.toInt() : 0);
 
   Future<void> waitForAccept(
     String transferId, {
@@ -121,6 +152,9 @@ class WishareClient {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       final state = await status(transferId);
+      if (state.declined) {
+        throw TransferDeclinedException(transferId, status: state.status);
+      }
       if (state.accepted) return;
       await Future<void>.delayed(const Duration(milliseconds: 500));
     }
@@ -145,6 +179,8 @@ class WishareClient {
         }),
       );
       _applyHeaders(request);
+      // Chunk bodies are raw bytes, not JSON.
+      request.headers.contentType = ContentType('application', 'octet-stream');
       request.add(bytes);
       final response = await request.close();
       final body = await _bytes(response);
@@ -170,8 +206,10 @@ class WishareClient {
   void _applyHeaders(HttpClientRequest request) {
     request.headers.set(WiProtocol.headerDeviceId, senderId);
     request.headers.set(WiProtocol.headerToken, token);
-    request.headers.set(WiProtocol.headerFingerprint, expectedFingerprint);
-    request.headers.contentType = ContentType.json;
+    request.headers.set(
+      WiProtocol.headerFingerprint,
+      senderFingerprint.isEmpty ? expectedFingerprint : senderFingerprint,
+    );
   }
 
   Future<Map<String, dynamic>> _jsonRequest(
@@ -189,6 +227,7 @@ class WishareClient {
       });
       _applyHeaders(request);
       if (body != null) {
+        request.headers.contentType = ContentType.json;
         request.add(jsonBytes(body));
       }
       final response = await request.close();

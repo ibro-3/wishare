@@ -4,9 +4,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/models/settings.dart';
+import '../../core/network/protocol.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/wishare_theme.dart';
-import '../../core/models/settings.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -23,8 +24,15 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     final identity = identityAsync.value;
-    Future<void> update(AppSettings Function(AppSettings) change) =>
-        ref.read(settingsProvider.notifier).updateSettings(change);
+    Future<void> update(AppSettings Function(AppSettings) change) async {
+      final current = ref.read(settingsProvider).value;
+      if (current == null) return;
+      final next = change(current);
+      await ref.read(settingsProvider.notifier).updateSettings((_) => next);
+      // Apply to live services without rebuilding the network controller,
+      // which would drop transfers already in flight.
+      await ref.read(networkProvider.notifier).applySettings(next);
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
@@ -43,8 +51,7 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   title: const Text('Certificate fingerprint'),
                   subtitle: Text(
-                    '${identity.fingerprint.substring(0, 16)}…'
-                    '${identity.fingerprint.substring(identity.fingerprint.length - 16)}',
+                    abbreviateFingerprint(identity.fingerprint, edge: 16),
                   ),
                 ),
             ],
@@ -69,8 +76,11 @@ class SettingsScreen extends ConsumerWidget {
                     ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
                   ],
                   selected: {settings.themeMode},
-                  onSelectionChanged: (value) =>
-                      update((s) => s.copyWith(themeMode: value.first)),
+                  onSelectionChanged: (value) {
+                    if (value.isNotEmpty) {
+                      update((s) => s.copyWith(themeMode: value.first));
+                    }
+                  },
                 ),
                 const SizedBox(height: 20),
                 SwitchListTile(
@@ -89,8 +99,11 @@ class SettingsScreen extends ConsumerWidget {
                       ButtonSegment(value: level, label: Text(level.label)),
                   ],
                   selected: {settings.contrast},
-                  onSelectionChanged: (value) =>
-                      update((s) => s.copyWith(contrast: value.first)),
+                  onSelectionChanged: (value) {
+                    if (value.isNotEmpty) {
+                      update((s) => s.copyWith(contrast: value.first));
+                    }
+                  },
                 ),
               ],
             ),
@@ -161,7 +174,7 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Wishare 0.1.0 · local network only',
+          'Wishare 0.1.1 · local network only',
           style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
@@ -196,33 +209,37 @@ class SettingsScreen extends ConsumerWidget {
     AppSettings settings,
   ) async {
     final controller = TextEditingController(text: settings.deviceName);
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Device name'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name'),
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Device name'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Name'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (saved == true && controller.text.trim().isNotEmpty) {
-      await ref
-          .read(settingsProvider.notifier)
-          .updateSettings(
-            (s) => s.copyWith(deviceName: controller.text.trim()),
-          );
+      );
+      if (saved == true && controller.text.trim().isNotEmpty) {
+        await ref
+            .read(settingsProvider.notifier)
+            .updateSettings(
+              (s) => s.copyWith(deviceName: controller.text.trim()),
+            );
+      }
+    } finally {
+      controller.dispose();
     }
   }
 }

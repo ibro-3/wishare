@@ -1,4 +1,5 @@
 import 'transfer.dart';
+import 'parse_helpers.dart';
 
 /// Transfer manifest: a flat list of relative paths, including explicit
 /// directory entries so empty folders survive the round trip.
@@ -31,16 +32,21 @@ class TransferManifest {
   };
 
   factory TransferManifest.fromJson(Map<String, dynamic> json) {
-    final entries = (json['entries'] as List<dynamic>)
-        .map((e) => TransferFileEntry.fromJson(e as Map<String, dynamic>))
+    final entries = (list(json['entries']) ?? const <dynamic>[])
+        .map(
+          (entry) => object(entry) == null
+              ? null
+              : TransferFileEntry.fromJson(object(entry)!),
+        )
+        .whereType<TransferFileEntry>()
         .toList();
     return TransferManifest(
-      transferId: json['transferId'] as String,
-      senderId: json['senderId'] as String,
-      senderName: json['senderName'] as String,
-      rootName: json['rootName'] as String,
+      transferId: text(json['transferId']) ?? '',
+      senderId: text(json['senderId']) ?? '',
+      senderName: text(json['senderName']) ?? 'Wishare device',
+      rootName: text(json['rootName']) ?? 'Files',
       entries: entries,
-      totalBytes: json['totalBytes'] as int,
+      totalBytes: integer(json['totalBytes'], 0),
     );
   }
 }

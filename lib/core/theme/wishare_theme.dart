@@ -78,7 +78,12 @@ abstract final class WishareTheme {
       platform: defaultTargetPlatform,
       colorScheme: scheme,
     );
-    final text = WiType.applyTokens(base.black);
+    // Typography.material2021 colours `.black` with `scheme.surface` and
+    // `.white` with `scheme.onSurface`. Picking black for a dark scheme would
+    // render body text dark-on-dark, so follow the scheme brightness.
+    final text = WiType.applyTokens(
+      scheme.brightness == Brightness.dark ? base.white : base.black,
+    );
     final emphasized = WiType.emphasized(text);
 
     return ThemeData(
@@ -212,7 +217,10 @@ class WiMotionExtension extends ThemeExtension<WiMotionExtension> {
       WiMotionExtension(reduceMotion: reduceMotion ?? this.reduceMotion);
 
   @override
-  WiMotionExtension lerp(WiMotionExtension? other, double t) => this;
+  WiMotionExtension lerp(WiMotionExtension? other, double t) {
+    if (other is! WiMotionExtension) return this;
+    return t < 0.5 ? this : other;
+  }
 }
 
 class WiContrastExtension extends ThemeExtension<WiContrastExtension> {
@@ -225,7 +233,10 @@ class WiContrastExtension extends ThemeExtension<WiContrastExtension> {
       WiContrastExtension(level ?? this.level);
 
   @override
-  WiContrastExtension lerp(WiContrastExtension? other, double t) => this;
+  WiContrastExtension lerp(WiContrastExtension? other, double t) {
+    if (other is! WiContrastExtension) return this;
+    return t < 0.5 ? this : other;
+  }
 }
 
 class NoTransitionBuilder extends PageTransitionsBuilder {

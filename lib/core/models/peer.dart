@@ -1,3 +1,6 @@
+import '../network/protocol.dart';
+import 'parse_helpers.dart';
+
 enum PairingMethod { qr, manual }
 
 enum TrustLevel { paired, untrusted, revoked }
@@ -31,8 +34,15 @@ class Peer {
   final DateTime? lastSeen;
   final TrustLevel trustLevel;
 
-  bool get isPaired =>
-      trustLevel == TrustLevel.paired && pinnedCertificate != null;
+  /// A peer is usable once pairing has been recorded *and* we have either a
+  /// session token (sender side) or a valid TOFU fingerprint (receiver side).
+  /// A paired flag alone must never enable sending.
+  bool get isPaired {
+    if (trustLevel != TrustLevel.paired) return false;
+    if (sessionToken != null && sessionToken!.isNotEmpty) return true;
+    final fingerprint = certificateFingerprint;
+    return fingerprint != null && isValidFingerprint(fingerprint);
+  }
 
   String get endpoint => '$address:$port';
 
@@ -83,25 +93,19 @@ class Peer {
   };
 
   factory Peer.fromJson(Map<String, dynamic> json) => Peer(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    address: json['address'] as String,
-    port: json['port'] as int,
-    colorSeed: json['colorSeed'] as int? ?? 0xFF6750A4,
-    certificateFingerprint: json['certificateFingerprint'] as String?,
-    pinnedCertificate: json['pinnedCertificate'] as String?,
-    sessionToken: json['sessionToken'] as String?,
-    pairingMethod: json['pairingMethod'] == null
-        ? null
-        : PairingMethod.values.byName(json['pairingMethod'] as String),
-    pairedAt: json['pairedAt'] == null
-        ? null
-        : DateTime.parse(json['pairedAt'] as String),
-    lastSeen: json['lastSeen'] == null
-        ? null
-        : DateTime.parse(json['lastSeen'] as String),
-    trustLevel: json['trustLevel'] == null
-        ? TrustLevel.untrusted
-        : TrustLevel.values.byName(json['trustLevel'] as String),
+    id: text(json['id']) ?? '',
+    name: text(json['name']) ?? 'Wishare device',
+    address: text(json['address']) ?? '',
+    port: integer(json['port'], 0),
+    colorSeed: integer(json['colorSeed'], 0xFF6750A4),
+    certificateFingerprint: text(json['certificateFingerprint']),
+    pinnedCertificate: text(json['pinnedCertificate']),
+    sessionToken: text(json['sessionToken']),
+    pairingMethod: enumByName(PairingMethod.values, json['pairingMethod']),
+    pairedAt: dateTime(json['pairedAt']),
+    lastSeen: dateTime(json['lastSeen']),
+    trustLevel:
+        enumByName(TrustLevel.values, json['trustLevel']) ??
+        TrustLevel.untrusted,
   );
 }

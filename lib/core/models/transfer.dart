@@ -1,3 +1,5 @@
+import 'parse_helpers.dart';
+
 enum TransferDirection { incoming, outgoing }
 
 enum TransferStatus {
@@ -37,13 +39,13 @@ class TransferFileEntry {
 
   factory TransferFileEntry.fromJson(Map<String, dynamic> json) =>
       TransferFileEntry(
-        relativePath: json['relativePath'] as String,
-        size: json['size'] as int,
-        isDirectory: json['isDirectory'] as bool? ?? false,
-        checksum: json['checksum'] as String?,
-        status: json['status'] == null
-            ? TransferStatus.queued
-            : TransferStatus.values.byName(json['status'] as String),
+        relativePath: text(json['relativePath']) ?? '',
+        size: integer(json['size'], 0),
+        isDirectory: boolean(json['isDirectory'], false),
+        checksum: text(json['checksum']),
+        status:
+            enumByName(TransferStatus.values, json['status']) ??
+            TransferStatus.queued,
       );
 }
 
@@ -136,23 +138,31 @@ class Transfer {
   };
 
   factory Transfer.fromJson(Map<String, dynamic> json) => Transfer(
-    id: json['id'] as String,
-    direction: TransferDirection.values.byName(json['direction'] as String),
-    peerId: json['peerId'] as String,
-    peerName: json['peerName'] as String,
-    files: (json['files'] as List<dynamic>)
-        .map((e) => TransferFileEntry.fromJson(e as Map<String, dynamic>))
+    id: text(json['id']) ?? '',
+    direction:
+        enumByName(TransferDirection.values, json['direction']) ??
+        TransferDirection.incoming,
+    peerId: text(json['peerId']) ?? '',
+    peerName: text(json['peerName']) ?? 'Wishare device',
+    files: (list(json['files']) ?? const <dynamic>[])
+        .map(
+          (entry) => object(entry) == null
+              ? null
+              : TransferFileEntry.fromJson(object(entry)!),
+        )
+        .whereType<TransferFileEntry>()
         .toList(),
-    totalBytes: json['totalBytes'] as int,
-    createdAt: DateTime.parse(json['createdAt'] as String),
-    status: TransferStatus.values.byName(json['status'] as String),
-    transferredBytes: json['transferredBytes'] as int? ?? 0,
-    speedBytesPerSecond: (json['speedBytesPerSecond'] as num?)?.toDouble() ?? 0,
-    finishedAt: json['finishedAt'] == null
-        ? null
-        : DateTime.parse(json['finishedAt'] as String),
-    checksum: json['checksum'] as String?,
-    error: json['error'] as String?,
-    saveDirectory: json['saveDirectory'] as String?,
+    totalBytes: integer(json['totalBytes'], 0),
+    createdAt:
+        dateTime(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+    status:
+        enumByName(TransferStatus.values, json['status']) ??
+        TransferStatus.offered,
+    transferredBytes: integer(json['transferredBytes'], 0),
+    speedBytesPerSecond: decimal(json['speedBytesPerSecond'], 0),
+    finishedAt: dateTime(json['finishedAt']),
+    checksum: text(json['checksum']),
+    error: text(json['error']),
+    saveDirectory: text(json['saveDirectory']),
   );
 }

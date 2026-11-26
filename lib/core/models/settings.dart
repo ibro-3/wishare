@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../theme/wishare_theme.dart';
+import 'parse_helpers.dart';
 
 class AppSettings {
   const AppSettings({
@@ -103,24 +104,26 @@ class AppSettings {
     'maxTransferBytes': maxTransferBytes,
   };
 
-  factory AppSettings.fromJson(Map<String, dynamic> json, String fallback) =>
-      AppSettings(
-        deviceName: json['deviceName'] as String? ?? 'Wishare device',
-        themeMode: json['themeMode'] == null
-            ? ThemeMode.system
-            : ThemeMode.values.byName(json['themeMode'] as String),
-        dynamicColor: json['dynamicColor'] as bool? ?? true,
-        contrast: json['contrast'] == null
-            ? WiContrast.standard
-            : WiContrast.values.byName(json['contrast'] as String),
-        downloadDirectory: json['downloadDirectory'] as String? ?? fallback,
-        discoveryEnabled: json['discoveryEnabled'] as bool? ?? true,
-        broadcastEnabled: json['broadcastEnabled'] as bool? ?? true,
-        notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
-        startMinimized: json['startMinimized'] as bool? ?? false,
-        maxFolderDepth: json['maxFolderDepth'] as int? ?? 32,
-        maxFiles: json['maxFiles'] as int? ?? 10000,
-        maxTransferBytes:
-            json['maxTransferBytes'] as int? ?? 20 * 1024 * 1024 * 1024,
-      );
+  factory AppSettings.fromJson(Map<String, dynamic> json, String fallback) {
+    final depth = integer(json['maxFolderDepth'], 32);
+    final files = integer(json['maxFiles'], 10000);
+    final bytes = integer(json['maxTransferBytes'], 20 * 1024 * 1024 * 1024);
+    return AppSettings(
+      deviceName: text(json['deviceName']) ?? 'Wishare device',
+      themeMode:
+          enumByName(ThemeMode.values, json['themeMode']) ?? ThemeMode.system,
+      dynamicColor: boolean(json['dynamicColor'], true),
+      contrast:
+          enumByName(WiContrast.values, json['contrast']) ??
+          WiContrast.standard,
+      downloadDirectory: text(json['downloadDirectory']) ?? fallback,
+      discoveryEnabled: boolean(json['discoveryEnabled'], true),
+      broadcastEnabled: boolean(json['broadcastEnabled'], true),
+      notificationsEnabled: boolean(json['notificationsEnabled'], true),
+      startMinimized: boolean(json['startMinimized'], false),
+      maxFolderDepth: depth < 1 ? 32 : (depth > 128 ? 128 : depth),
+      maxFiles: files < 1 ? 10000 : (files > 100000 ? 100000 : files),
+      maxTransferBytes: bytes < 1 ? 20 * 1024 * 1024 * 1024 : bytes,
+    );
+  }
 }

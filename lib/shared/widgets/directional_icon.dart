@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:material_ui/material_ui.dart';
 
 /// Mirrors directional icons in RTL layouts.
@@ -24,7 +22,13 @@ class WiDirectionalIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final icon = Icon(this.icon, size: size, color: color);
     if (mirrored && Directionality.of(context) == TextDirection.rtl) {
-      return Transform.rotate(angle: math.pi, child: icon);
+      // Mirror horizontally only; a 180° rotation would point the icon down
+      // as well as backwards (wrong for send arrows and similar glyphs).
+      return Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()..scaleByDouble(-1.0, 1.0, 1.0, 1.0),
+        child: icon,
+      );
     }
     return icon;
   }
