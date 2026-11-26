@@ -55,76 +55,31 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   Widget build(BuildContext context) {
     final peers = ref.watch(peersProvider).value ?? const <Peer>[];
-    // A device the caller asked for (for example via a share shortcut) is
-    // listed first; every paired device is tappable to send the selection.
-    final paired = peers.where((peer) => peer.isPaired).toList()
-      ..sort(
-        (a, b) => (a.id == _requestedPeerId ? 0 : 1).compareTo(
+    // One list for every known device: paired first, then the peer requested
+    // by a share shortcut, then most-recently-seen. Unpaired devices follow
+    // with an inline Pair action.
+    final devices = peers.toList()
+      ..sort((a, b) {
+        final pairedOrder = (a.isPaired ? 0 : 1).compareTo(b.isPaired ? 0 : 1);
+        if (pairedOrder != 0) return pairedOrder;
+        final requestedOrder = (a.id == _requestedPeerId ? 0 : 1).compareTo(
           b.id == _requestedPeerId ? 0 : 1,
-        ),
-      );
+        );
+        if (requestedOrder != 0) return requestedOrder;
+        final seenA = a.lastSeen?.millisecondsSinceEpoch ?? 0;
+        final seenB = b.lastSeen?.millisecondsSinceEpoch ?? 0;
+        return seenB.compareTo(seenA);
+      });
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final total = _selected.fold<int>(0, (sum, entry) => sum + entry.size);
 
-    final nearby = peers.where((peer) => !peer.isPaired).toList();
     return SingleChildScrollView(
       // Leave room for the navigation bar and the pairing FAB above it.
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Send to', style: text.titleMedium),
-          const SizedBox(height: 8),
-          if (paired.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'No paired devices yet. Pair a device first.',
-                  style: text.bodySmall,
-                ),
-              ),
-            )
-          else
-            for (final peer in paired)
-              Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: scheme.primaryContainer,
-                    foregroundColor: scheme.onPrimaryContainer,
-                    child: const Icon(Icons.devices_other),
-                  ),
-                  title: Text(peer.name, style: text.titleMedium),
-                  subtitle: Text(peer.endpoint, style: text.bodySmall),
-                  // Tapping the device is the send action: no separate button.
-                  trailing: const WiDirectionalIcon(Icons.send),
-                  onTap: _busy ? null : () => _choose(peer),
-                ),
-              ),
-          if (nearby.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text('Nearby devices', style: text.titleSmall),
-            const SizedBox(height: 8),
-            for (final peer in nearby.take(4))
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(
-                  backgroundColor: scheme.secondaryContainer,
-                  foregroundColor: scheme.onSecondaryContainer,
-                  child: const Icon(Icons.devices_other),
-                ),
-                title: Text(peer.name, style: text.bodyMedium),
-                subtitle: Text(peer.address, style: text.bodySmall),
-                trailing: OutlinedButton(
-                  onPressed: () => context.go(
-                    '/scan?host=${peer.address}&port=${peer.port}',
-                  ),
-                  child: const Text('Pair'),
-                ),
-              ),
-          ],
-          const SizedBox(height: 24),
           Text('Files and folders', style: text.titleMedium),
           const SizedBox(height: 8),
           Row(
@@ -216,11 +171,51 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           if (_selected.isNotEmpty && !_busy) ...[
             const SizedBox(height: 12),
             Text(
-              'Tap a device above to send these items',
+              'Tap a device below to send these items',
               style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
           ],
+          const SizedBox(height: 24),
+          Text('Send to', style: text.titleMedium),
+          const SizedBox(height: 8),
+          if (devices.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No devices found yet. Use the Pair button to add one.',
+                  style: text.bodySmall,
+                ),
+              ),
+            )
+          else
+            for (final peer in devices)
+              Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: peer.isPaired
+                        ? scheme.primaryContainer
+                        : scheme.secondaryContainer,
+                    foregroundColor: peer.isPaired
+                        ? scheme.onPrimaryContainer
+                        : scheme.onSecondaryContainer,
+                    child: const Icon(Icons.devices_other),
+                  ),
+                  title: Text(peer.name, style: text.titleMedium),
+                  subtitle: Text(peer.endpoint, style: text.bodySmall),
+                  // Paired rows send on tap; unpaired rows pair inline.
+                  trailing: peer.isPaired
+                      ? const WiDirectionalIcon(Icons.send)
+                      : OutlinedButton(
+                          onPressed: () => context.go(
+                            '/scan?host=${peer.address}&port=${peer.port}',
+                          ),
+                          child: const Text('Pair'),
+                        ),
+                  onTap: peer.isPaired && !_busy ? () => _choose(peer) : null,
+                ),
+              ),
         ],
       ),
     );

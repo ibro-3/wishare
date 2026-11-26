@@ -7,7 +7,7 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.1.2)
+## Current status (v0.1.3)
 
 Implemented:
 
@@ -17,8 +17,9 @@ Implemented:
   `SpringSimulation`.
 - Adaptive shell: Send and Receive in a bottom navigation bar on every screen
   size, with History and Settings in the app bar's trailing edge and pairing
-  in an extended FAB above the bar. To send, pick files or a folder and tap a
-  paired device; there is no separate Send button. Bottom sheets on phones,
+  in an extended FAB above the bar. Send to lists every known device with
+  paired ones on top: pick files or a folder and tap a paired device to send,
+  or use the inline Pair button for nearby devices. Bottom sheets on phones,
   dialogs on desktop.
 - Device discovery via a DNS-SD mDNS responder (`_wishare._tcp.local`) plus a
   UDP broadcast heartbeat, with manual IP/QR fallback.
@@ -54,17 +55,17 @@ flutter build linux --release
 # flutter build windows --release  (Windows host required)
 ```
 
-Publishing a GitHub release (v0.1.2):
+Publishing a GitHub release (v0.1.3):
 
 ```bash
-git tag v0.1.2 && git push origin v0.1.2
+git tag v0.1.3 && git push origin v0.1.3
 ```
 
 `.github/workflows/release.yml` builds Windows, Linux and Android in parallel,
-then attaches `wishare-0.1.2-windows-x64.zip`, `wishare-0.1.2-linux-x64.zip`,
-`wishare-0.1.2-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
+then attaches `wishare-0.1.3-windows-x64.zip`, `wishare-0.1.3-linux-x64.zip`,
+`wishare-0.1.3-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
 release. The workflow can also be started manually with `workflow_dispatch` and
-a tag name. `dist/` holds the older local assets; v0.1.2 assets are produced by
+a tag name. `dist/` holds the older local assets; v0.1.3 assets are produced by
 CI when the tag is pushed.
 
 Tests and CI:

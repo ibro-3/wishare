@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.3 — single device list
+
+- Send to is now the single device list: paired devices stay on top and send
+  on tap, while nearby devices appear in the same list with an inline Pair
+  button. The separate Nearby devices section was removed.
+
 ## v0.1.2 — navigation and reachability
 
 - History and Settings moved to the app bar's trailing edge; pairing moved

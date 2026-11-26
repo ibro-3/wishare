@@ -44,6 +44,42 @@ void main() {
     expect(find.text('Send'), findsNothing);
   });
 
+  testWidgets('Send to lists paired and nearby devices in one list', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'peers': jsonEncode([
+        {
+          'id': 'nearby-1',
+          'name': 'Nearby laptop',
+          'address': '192.168.1.30',
+          'port': 45821,
+          'colorSeed': 0xFF6750A4,
+        },
+        {
+          'id': 'paired-1',
+          'name': 'Paired PC',
+          'address': '192.168.1.20',
+          'port': 45821,
+          'colorSeed': 0xFF6750A4,
+          'sessionToken': 'token',
+          'trustLevel': 'paired',
+        },
+      ]),
+    });
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: SendScreen())),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Send to'), findsOneWidget);
+    expect(find.text('Nearby devices'), findsNothing);
+    expect(find.text('Paired PC'), findsOneWidget);
+    expect(find.text('Nearby laptop'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Pair'), findsOneWidget);
+    final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
+    expect((tiles.first.title as Text).data, 'Paired PC');
+  });
+
   testWidgets('ScanScreen takes route parameters via its constructor', (
     tester,
   ) async {

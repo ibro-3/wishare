@@ -174,7 +174,7 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Wishare 0.1.2 · local network only',
+          'Wishare 0.1.3 · local network only',
           style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
