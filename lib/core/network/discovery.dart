@@ -2,16 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:multicast_dns/multicast_dns.dart';
+
 import '../crypto/certificate_manager.dart';
+import '../platform/android_multicast.dart';
 import 'mdns_responder.dart';
 import '../models/peer.dart';
 import 'protocol.dart';
 
-/// LAN discovery via UDP broadcast heartbeat (my design decision).
+/// LAN discovery: a UDP broadcast heartbeat plus an mDNS/DNS-SD querier.
 ///
-/// mDNS is supported for interoperability with other `_wishare._tcp.local`
-/// implementations, but our own advertisement uses broadcast because a Dart
-/// mDNS responder is not available in `multicast_dns` v0.3.
+/// `multicast_dns` is a client-only package, so our own advertisement uses a
+/// broadcast heartbeat and a small mDNS responder. Both paths feed the same
+/// peer list; manual IP/QR pairing remains the fallback when a network blocks
+/// all local discovery.
 class DiscoveryService {
   DiscoveryService({
     required DeviceIdentity identity,
@@ -27,41 +31,66 @@ class DiscoveryService {
 
   RawDatagramSocket? _socket;
   MDnsResponder? _mdns;
+  MDnsClient? _mdnsClient;
   Timer? _heartbeat;
   Timer? _pruner;
+  Timer? _mdnsQuery;
+  bool _multicastLockHeld = false;
+  List<InternetAddress> _broadcastTargets = const [];
   final Map<String, Peer> _peers = {};
   final StreamController<List<Peer>> _controller =
       StreamController<List<Peer>>.broadcast();
+  final StreamController<String> _errors = StreamController<String>.broadcast();
 
   Stream<List<Peer>> get peers => _controller.stream;
+
+  /// Discovery/transport errors worth showing in the UI. An empty string
+  /// means the last problem cleared.
+  Stream<String> get errors => _errors.stream;
+
+  String? get lastError => _lastError;
+  String? _lastError;
+
+  /// True once the UDP socket is bound with IPv4 broadcast enabled.
+  bool get broadcastReady => _socket?.broadcastEnabled ?? false;
 
   List<Peer> get current => List.unmodifiable(_peers.values);
 
   Future<void> start() async {
     if (!_enabled) return;
     try {
-      _socket = await RawDatagramSocket.bind(
+      final socket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
         WiProtocol.port,
         reuseAddress: true,
         reusePort: true,
       );
-    } on SocketException {
-      // Broadcast discovery is best-effort; mDNS and manual/QR still work.
+      // Dart disables IPv4 broadcast by default. Without this flag sending to
+      // a broadcast address fails and the heartbeat never leaves the device.
+      socket.broadcastEnabled = true;
+      _socket = socket;
+    } on Object catch (error) {
+      // mDNS, manual IP and QR remain available when broadcast cannot bind.
       _socket = null;
+      _reportError('Broadcast discovery unavailable: $error');
     }
     if (_socket != null) {
-      _socket!.listen((event) {
-        // A malformed datagram must never take down the discovery service.
-        try {
-          if (event != RawSocketEvent.read) return;
-          final datagram = _socket?.receive();
-          if (datagram == null) return;
-          _handleDatagram(datagram);
-        } on Object {
-          // Ignore this packet and keep listening.
-        }
-      });
+      _broadcastTargets = broadcastTargets(await _interfaces());
+      _socket!.listen(
+        (event) {
+          // A malformed datagram must never take down the discovery service.
+          try {
+            if (event != RawSocketEvent.read) return;
+            final datagram = _socket?.receive();
+            if (datagram == null) return;
+            _handleDatagram(datagram);
+          } on Object {
+            // Ignore this packet and keep listening.
+          }
+        },
+        onError: (Object error) =>
+            _reportError('Discovery socket error: $error'),
+      );
       _startHeartbeat();
     }
     await _startMdns();
@@ -79,22 +108,168 @@ class DiscoveryService {
     });
   }
 
+  static Future<List<NetworkInterface>> _interfaces() => NetworkInterface.list(
+    includeLoopback: false,
+    type: InternetAddressType.IPv4,
+  );
+
+  /// Prefer the interface broadcast addresses so Android and home routers
+  /// actually forward the heartbeat; the global address is a fallback.
+  static List<InternetAddress> broadcastTargets(
+    Iterable<NetworkInterface> interfaces,
+  ) {
+    final seen = <String>{};
+    final targets = <InternetAddress>[];
+    for (final interface in interfaces) {
+      for (final address in interface.addresses) {
+        final broadcast = address.broadcast;
+        if (broadcast == null || !seen.add(broadcast.address)) continue;
+        targets.add(broadcast);
+      }
+    }
+    final global = InternetAddress('255.255.255.255');
+    if (seen.add(global.address)) targets.add(global);
+    return targets;
+  }
+
+  /// Pick a usable LAN address, ignoring virtual interfaces (Docker, VPN,
+  /// bridges) that would produce an unreachable QR pairing code.
+  static Future<String> preferredLocalAddress() async {
+    final interfaces = await _interfaces();
+    final candidates = <(int, String)>[];
+    for (final interface in interfaces) {
+      final name = interface.name.toLowerCase();
+      if (const [
+        'docker',
+        'br-',
+        'veth',
+        'virbr',
+        'vboxnet',
+        'vmnet',
+        'tun',
+        'tap',
+        'wg',
+        'tailscale',
+        'ppp',
+        'dummy',
+      ].any(name.startsWith)) {
+        continue;
+      }
+      final score = name.startsWith('wlan') || name.startsWith('wlp')
+          ? 3
+          : name.startsWith('eth') || name.startsWith('enp')
+          ? 2
+          : 1;
+      for (final address in interface.addresses) {
+        if (address.isLoopback || address.address.startsWith('169.254.')) {
+          continue;
+        }
+        if (address.broadcast == null) continue;
+        candidates.add((score, address.address));
+      }
+    }
+    candidates.sort((a, b) => b.$1.compareTo(a.$1));
+    return candidates.isEmpty ? '127.0.0.1' : candidates.first.$2;
+  }
+
   Future<void> _startMdns() async {
-    if (_mdns != null) return;
-    final interfaces = await NetworkInterface.list(
-      includeLoopback: false,
-      type: InternetAddressType.IPv4,
-    );
-    final localAddress =
-        interfaces.isNotEmpty && interfaces.first.addresses.isNotEmpty
-        ? interfaces.first.addresses.first.address
-        : '127.0.0.1';
+    if (_mdns != null && _mdnsClient != null) return;
+    await AndroidMulticast.acquire();
+    _multicastLockHeld = true;
+    final localAddress = await preferredLocalAddress();
     _mdns = MDnsResponder(identity: _identity, address: localAddress);
     try {
       await _mdns!.start();
-    } on Object {
+    } on Object catch (error) {
       _mdns = null;
+      _reportError('mDNS responder unavailable: $error');
     }
+
+    _mdnsClient = MDnsClient();
+    try {
+      await _mdnsClient!.start(
+        interfacesFactory: (type) => _interfaces(),
+        onError: (Object error) => _reportError('mDNS client error: $error'),
+      );
+      // Do not await the first lookup: a one-shot mDNS query can take up to
+      // its five-second timeout and must never delay app startup.
+      unawaited(_queryMdns());
+      _mdnsQuery?.cancel();
+      _mdnsQuery = Timer.periodic(
+        const Duration(seconds: 10),
+        (_) => unawaited(_queryMdns()),
+      );
+    } on Object catch (error) {
+      _mdnsClient?.stop();
+      _mdnsClient = null;
+      _reportError('mDNS discovery unavailable: $error');
+    }
+    if (_mdns == null && _mdnsClient == null) await _releaseMulticast();
+  }
+
+  /// One-shot mDNS query: find instances, then read their TXT/A records. Our
+  /// responder answers both, so two Wishare apps can find each other even if
+  /// UDP broadcast is blocked by the network.
+  Future<void> _queryMdns() async {
+    final client = _mdnsClient;
+    if (client == null) return;
+    try {
+      final pointers = await client
+          .lookup<PtrResourceRecord>(
+            ResourceRecordQuery.serverPointer(WiProtocol.serviceType),
+          )
+          .toList();
+      for (final pointer in pointers) {
+        final instance = pointer.domainName;
+        if (!instance.toLowerCase().endsWith('.${WiProtocol.serviceType}')) {
+          continue;
+        }
+        final txt = await client
+            .lookup<TxtResourceRecord>(ResourceRecordQuery.text(instance))
+            .toList();
+        final addresses = await client
+            .lookup<IPAddressResourceRecord>(
+              ResourceRecordQuery.addressIPv4(instance),
+            )
+            .toList();
+        final address = addresses.firstOrNull?.address.address;
+        if (address == null) continue;
+        final fields = <String, String>{};
+        for (final line in (txt.firstOrNull?.text ?? '').split(
+          RegExp(r'[\r\n]+'),
+        )) {
+          final separator = line.indexOf('=');
+          if (separator < 1) continue;
+          fields[line.substring(0, separator)] = line.substring(separator + 1);
+        }
+        final id = fields['id'] ?? instance.split('.').first;
+        if (id.isEmpty || id == _identity.id) continue;
+        final port = int.tryParse(fields['port'] ?? '') ?? WiProtocol.port;
+        if (port < 1 || port > 65535) continue;
+        final fingerprint = fields['fp'] ?? '';
+        final name = fields['name'];
+        _peers[id] = Peer(
+          id: id,
+          name: name != null && name.isNotEmpty ? name : 'Wishare device',
+          address: address,
+          port: port,
+          colorSeed: 0xFF6750A4,
+          certificateFingerprint: isValidFingerprint(fingerprint)
+              ? normaliseFingerprint(fingerprint)
+              : null,
+          lastSeen: DateTime.now(),
+        );
+      }
+      if (pointers.isNotEmpty) _emit();
+    } on Object catch (error) {
+      _reportError('mDNS lookup failed: $error');
+    }
+  }
+
+  Future<void> _releaseMulticast() async {
+    if (!_multicastLockHeld) return;
+    _multicastLockHeld = false;
+    await AndroidMulticast.release();
   }
 
   void _startHeartbeat() {
@@ -120,8 +295,7 @@ class DiscoveryService {
       _heartbeat = null;
       _socket?.close();
       _socket = null;
-      unawaited(_mdns?.stop());
-      _mdns = null;
+      unawaited(_stopMdns());
       return;
     }
     if (_socket == null) {
@@ -141,18 +315,24 @@ class DiscoveryService {
       'fp': _identity.fingerprint,
       'v': WiProtocol.version,
     });
-    // One datagram reaches every device on the local broadcast domain; N
-    // interfaces do not need N copies.
     _sendBroadcast(utf8.encode(payload));
   }
 
   void _sendBroadcast(List<int> bytes) {
-    try {
-      _socket?.send(bytes, InternetAddress('255.255.255.255'), WiProtocol.port);
-    } on SocketException {
-      // Some platforms disallow directed broadcast; the manual/QR path
-      // remains available.
+    final socket = _socket;
+    if (socket == null) return;
+    final targets = _broadcastTargets.isEmpty
+        ? [InternetAddress('255.255.255.255')]
+        : _broadcastTargets;
+    var sent = 0;
+    for (final target in targets) {
+      try {
+        if (socket.send(bytes, target, WiProtocol.port) > 0) sent++;
+      } on Object catch (error) {
+        _reportError('Could not send discovery heartbeat: $error');
+      }
     }
+    if (sent > 0) _clearError();
   }
 
   void _handleDatagram(Datagram datagram) {
@@ -187,7 +367,30 @@ class DiscoveryService {
     _emit();
   }
 
+  void _reportError(Object error) {
+    final message = error.toString();
+    if (message == _lastError) return;
+    _lastError = message;
+    if (!_errors.isClosed) _errors.add(message);
+  }
+
+  void _clearError() {
+    if (_lastError == null) return;
+    _lastError = null;
+    if (!_errors.isClosed) _errors.add('');
+  }
+
   void _emit() => _controller.add(List.unmodifiable(_peers.values.toList()));
+
+  Future<void> _stopMdns() async {
+    _mdnsQuery?.cancel();
+    _mdnsQuery = null;
+    _mdnsClient?.stop();
+    _mdnsClient = null;
+    await _mdns?.stop();
+    _mdns = null;
+    await _releaseMulticast();
+  }
 
   /// Stop advertising/listening while keeping the stream reusable.
   Future<void> stop() async {
@@ -197,12 +400,12 @@ class DiscoveryService {
     _pruner = null;
     _socket?.close();
     _socket = null;
-    await _mdns?.stop();
-    _mdns = null;
+    await _stopMdns();
   }
 
   Future<void> dispose() async {
     await stop();
     await _controller.close();
+    await _errors.close();
   }
 }

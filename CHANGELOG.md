@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.0 — discovery and pairing fixes
+
+- Enabled IPv4 broadcast on the discovery socket and send heartbeats to each
+  interface's broadcast address. Previously Dart's default disabled broadcast
+  and the resulting socket error was swallowed, so nearby devices never saw
+  each other and request/approve pairing could not start.
+- Added an mDNS querier alongside the existing responder, with an Android Wi-Fi
+  multicast lock, so discovery has a second path on networks that block UDP
+  broadcast. Fixed a malformed SRV record (missing weight field) that prevented
+  standards-based mDNS browsers from resolving Wishare services.
+- Desktop pairing no longer opens a camera page that has no plugin: Linux and
+  Windows go straight to manual IP/PIN/fingerprint entry, while **Show my code**
+  remains available. Camera failures on supported platforms now offer the same
+  fallback.
+- Pairing QR codes use a real LAN address instead of the first non-loopback
+  interface, which could be a Docker or VPN address. Discovery failures are
+  now shown on the Send tab instead of being silent.
+
 ## v0.3.2 — Android update downloads
 
 - On Android, update APKs are enqueued in the system DownloadManager instead of

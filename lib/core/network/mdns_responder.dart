@@ -70,6 +70,7 @@ abstract final class MDnsProtocol {
     required DeviceIdentity identity,
     required String address,
     required int port,
+    String? recordName,
   }) {
     final out = BytesBuilder(copy: false);
     void u16(int value) {
@@ -109,7 +110,7 @@ abstract final class MDnsProtocol {
     u16(3);
     out.add(question.bytes);
 
-    final instanceName = '${identity.id}.$serviceName';
+    final instanceName = recordName ?? ptrTarget;
     record(
       name: const [0xC0, 0x0C],
       type: ptr,
@@ -118,8 +119,9 @@ abstract final class MDnsProtocol {
       rdata: encodeName(ptrTarget),
     );
 
+    // SRV rdata: priority, weight, port, then the target hostname.
     final srvData = BytesBuilder(copy: false)
-      ..add([0, 0, (port >> 8) & 0xFF, port & 0xFF])
+      ..add([0, 0, 0, 0, (port >> 8) & 0xFF, port & 0xFF])
       ..add(encodeName('${identity.id}.local'));
     record(
       name: MDnsProtocol.encodeName(instanceName),
@@ -204,6 +206,7 @@ class MDnsResponder {
         _port,
         reuseAddress: true,
         reusePort: true,
+        ttl: 255, // mDNS requires TTL 255.
       );
       socket.joinMulticast(_multicast);
       socket.listen((event) {
@@ -212,12 +215,20 @@ class MDnsResponder {
         if (datagram == null) return;
         final question = MDnsProtocol.parseQuestion(datagram.data);
         if (question == null || !question.isWishareQuery) return;
-        final ptrTarget = question.name == MDnsProtocol.enumerationName
+        // A service/enumeration question advertises our instance; a direct
+        // instance question (from an mDNS querier) echoes its own name so the
+        // SRV/TXT/A records match what the querier is looking for.
+        final isEnumeration = question.name == MDnsProtocol.enumerationName;
+        final instanceName = '${identity.id}.${MDnsProtocol.serviceName}';
+        final ptrTarget = isEnumeration
             ? MDnsProtocol.serviceName
-            : '${identity.id}.${MDnsProtocol.serviceName}';
+            : question.name == MDnsProtocol.serviceName
+            ? instanceName
+            : question.name;
         final response = MDnsProtocol.buildResponse(
           question: question,
           ptrTarget: ptrTarget,
+          recordName: isEnumeration ? instanceName : null,
           identity: identity,
           address: address,
           port: WiProtocol.port,

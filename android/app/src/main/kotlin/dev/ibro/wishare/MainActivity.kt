@@ -3,6 +3,7 @@ package dev.ibro.wishare
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Environment
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -21,6 +22,27 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            MULTICAST_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "acquire" -> {
+                    multicastLock?.acquire()
+                    result.success(null)
+                }
+                "release" -> {
+                    multicastLock?.let { if (it.isHeld) it.release() }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private val multicastLock: WifiManager.MulticastLock? by lazy {
+        val manager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        manager?.createMulticastLock("wishare_mdns")?.apply { setReferenceCounted(true) }
     }
 
     private fun enqueueDownload(call: MethodCall, result: MethodChannel.Result) {
@@ -57,5 +79,6 @@ class MainActivity : FlutterActivity() {
 
     private companion object {
         const val DOWNLOAD_CHANNEL = "dev.ibro.wishare/downloads"
+        const val MULTICAST_CHANNEL = "dev.ibro.wishare/multicast"
     }
 }

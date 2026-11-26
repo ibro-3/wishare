@@ -86,7 +86,10 @@ void main() {
         failure = error;
       }
       expect(failure, isA<HttpException>());
-      expect(failure.toString(), isNot(contains('401')));
+      // The token was accepted: the only failure is the unknown transfer id,
+      // not an authorization rejection. (Do not match on '401': an ephemeral
+      // port can contain those digits.)
+      expect(failure.toString(), contains('Unknown transfer'));
     },
   );
 

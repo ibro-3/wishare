@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 
@@ -240,12 +239,13 @@ class NetworkState {
     String? pin,
     PairingPayload? qrPayload,
     String? error,
+    bool clearError = false,
   }) => NetworkState(
     server: server,
     discovery: discovery,
     pin: pin,
     qrPayload: qrPayload,
-    error: error,
+    error: clearError ? null : error ?? this.error,
   );
 }
 
@@ -293,6 +293,13 @@ class NetworkController extends AsyncNotifier<NetworkState> {
     subscriptions.addAll([
       discovery.peers.listen((peers) {
         ref.read(peersProvider.notifier).merge(peers);
+      }),
+      discovery.errors.listen((message) {
+        final current = state.value;
+        if (current == null || !ref.mounted) return;
+        state = AsyncData(
+          current.copyWith(error: message, clearError: message.isEmpty),
+        );
       }),
       server.offers.listen((manifest) {
         if (AppLifecycle.state.value != AppLifecycleState.resumed &&
@@ -489,18 +496,5 @@ class NetworkController extends AsyncNotifier<NetworkState> {
     return payload;
   }
 
-  Future<String> _localAddress() async {
-    // The receiver's LAN address is advertised over UDP; prefer the first
-    // non-loopback IPv4 address as a usable pairing host.
-    final interfaces = await NetworkInterface.list(
-      includeLoopback: false,
-      type: InternetAddressType.IPv4,
-    );
-    for (final interface in interfaces) {
-      for (final address in interface.addresses) {
-        if (!address.isLoopback) return address.address;
-      }
-    }
-    return '127.0.0.1';
-  }
+  Future<String> _localAddress() => DiscoveryService.preferredLocalAddress();
 }

@@ -7,7 +7,7 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.3.2)
+## Current status (v0.4.0)
 
 Implemented:
 
@@ -30,16 +30,19 @@ Implemented:
   device with paired ones on top: pick files or a folder and tap a paired
   device to send, or use the inline Pair button for nearby devices. Bottom
   sheets on phones, dialogs on desktop.
-- Device discovery via a DNS-SD mDNS responder (`_wishare._tcp.local`) plus a
-  UDP broadcast heartbeat, with manual IP/QR fallback.
+- Device discovery via a DNS-SD mDNS querier and responder
+  (`_wishare._tcp.local`) plus a UDP broadcast heartbeat, with manual IP/QR
+  fallback. On desktop the Pair button opens manual entry directly, since the
+  camera scanner plugin has no Linux/Windows implementation.
 - Self-signed P-256 certificate generation and TOFU fingerprint pinning.
 - Three pairing paths: QR scan, request/approve with a nearby device (no code
   at all), and manual IP/PIN/fingerprint entry. All show the certificate
   fingerprint for confirmation.
 - HTTPS receiver and sender: pairing token, transfer offers, chunk streaming
   with resume, checksum verification, safe folder extraction, transfer history.
-- Android foreground service declaration, Wi-Fi lock and "Share to Wishare"
-  intent intake; desktop window setup with a tray icon and menu.
+- Android foreground service declaration, Wi-Fi lock, Wi-Fi multicast lock for
+  mDNS and "Share to Wishare" intent intake; desktop window setup with a tray
+  icon and menu.
 - Persistent peers, transfers and settings via `shared_preferences` + JSON.
 
 Still out of scope:
@@ -91,17 +94,17 @@ flutter build linux --release
 # flutter build windows --release  (Windows host required)
 ```
 
-Publishing a GitHub release (v0.3.2):
+Publishing a GitHub release (v0.4.0):
 
 ```bash
-git tag v0.3.2 && git push origin v0.3.2
+git tag v0.4.0 && git push origin v0.4.0
 ```
 
 `.github/workflows/release.yml` builds Windows, Linux and Android in parallel,
-then attaches `wishare-0.3.2-windows-x64.zip`, `wishare-0.3.2-linux-x64.zip`,
-`wishare-0.3.2-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
+then attaches `wishare-0.4.0-windows-x64.zip`, `wishare-0.4.0-linux-x64.zip`,
+`wishare-0.4.0-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
 release. The workflow can also be started manually with `workflow_dispatch` and
-a tag name. `dist/` holds the older local assets; v0.3.2 assets are produced by
+a tag name. `dist/` holds the older local assets; v0.4.0 assets are produced by
 CI when the tag is pushed. The update manager reads these releases through
 `https://api.github.com/repos/ibro-3/wishare/releases/latest`; keep asset names
 in the `wishare-<version>-<platform>.<ext>` form so the platform picker works.

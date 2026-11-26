@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -20,6 +21,14 @@ class ScanScreen extends ConsumerStatefulWidget {
 }
 
 class _ScanScreenState extends ConsumerState<ScanScreen> {
+  // mobile_scanner has no Linux/Windows implementation. Default those
+  // platforms to manual entry instead of opening a broken camera view.
+  static bool get _cameraSupported =>
+      kIsWeb ||
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.macOS;
+
   bool _manual = false;
   bool _busy = false;
   String? _error;
@@ -42,7 +51,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     super.initState();
     _host.text = widget.host ?? '';
     _port.text = widget.port ?? '${WiProtocol.port}';
-    _manual = _host.text.isNotEmpty;
+    _manual = !_cameraSupported || _host.text.isNotEmpty;
   }
 
   @override
@@ -64,11 +73,12 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       appBar: AppBar(
         title: const Text('Scan pairing code'),
         actions: [
-          IconButton(
-            tooltip: _manual ? 'Scan a code' : 'Enter details manually',
-            icon: Icon(_manual ? Icons.qr_code_scanner : Icons.keyboard),
-            onPressed: () => setState(() => _manual = !_manual),
-          ),
+          if (_cameraSupported)
+            IconButton(
+              tooltip: _manual ? 'Scan a code' : 'Enter details manually',
+              icon: Icon(_manual ? Icons.qr_code_scanner : Icons.keyboard),
+              onPressed: () => setState(() => _manual = !_manual),
+            ),
           // The generator screen is where the other device displays the code
           // this camera needs. M3 app bars carry up to two trailing buttons.
           IconButton(
@@ -85,10 +95,40 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   }
 
   Widget _cameraView() {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     return Stack(
       children: [
         MobileScanner(
           controller: _scannerController,
+          errorBuilder: (context, error) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.qr_code_scanner, size: 48, color: scheme.primary),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Camera unavailable',
+                    style: text.titleMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    error.errorCode.message,
+                    style: text.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => setState(() => _manual = true),
+                    child: const Text('Enter details manually'),
+                  ),
+                ],
+              ),
+            ),
+          ),
           onDetect: (capture) {
             if (_busy) return;
             for (final barcode in capture.barcodes) {
@@ -130,7 +170,11 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
           Text('Enter pairing details', style: text.headlineSmall),
           const SizedBox(height: 8),
           Text(
-            'Read the PIN and fingerprint from the other device’s pairing screen.',
+            _cameraSupported
+                ? 'Read the PIN and fingerprint from the other device’s pairing screen.'
+                : 'Camera scanning is unavailable on this platform. Ask the '
+                      'receiving device to show its pairing code, then enter its '
+                      'IP address, PIN and fingerprint below.',
             style: text.bodySmall,
           ),
           const SizedBox(height: 24),

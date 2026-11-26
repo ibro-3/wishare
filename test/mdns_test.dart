@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:multicast_dns/multicast_dns.dart';
+import 'package:multicast_dns/src/packet.dart' as mdns_packet;
 import 'package:wishare/core/crypto/certificate_manager.dart';
 import 'package:wishare/core/network/mdns_responder.dart';
 
@@ -41,6 +43,48 @@ void main() {
     expect(response, contains(0xC0)); // name compression pointer
     final ip = InternetAddress('192.168.1.20').rawAddress;
     expect(response.sublist(response.length - 4), ip);
+  });
+
+  test('our response is readable by the multicast_dns querier', () async {
+    final identity = await CertificateManager.create(name: 'Test device');
+    final query = BytesBuilder(copy: false)
+      ..add(const [0x12, 0x34, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0])
+      ..add(MDnsProtocol.encodeName(MDnsProtocol.serviceName))
+      ..add(const [0, MDnsProtocol.ptr, 0, 1]);
+    final question = MDnsProtocol.parseQuestion(query.takeBytes())!;
+    final instanceName = '${identity.id}.${MDnsProtocol.serviceName}';
+    final response = MDnsProtocol.buildResponse(
+      question: question,
+      ptrTarget: instanceName,
+      identity: identity,
+      address: '192.168.1.20',
+      port: 45821,
+    );
+
+    final records = mdns_packet.decodeMDnsResponse(response);
+    expect(records, isNotNull);
+
+    final pointers = records!.whereType<PtrResourceRecord>().toList();
+    expect(pointers, hasLength(1));
+    expect(pointers.first.domainName, instanceName);
+
+    final services = records.whereType<SrvResourceRecord>().toList();
+    expect(services, hasLength(1));
+    expect(services.first.name, instanceName);
+    expect(services.first.port, 45821);
+    expect(services.first.target, '${identity.id}.local');
+
+    final texts = records.whereType<TxtResourceRecord>().toList();
+    expect(texts, hasLength(1));
+    expect(texts.first.name, instanceName);
+    expect(texts.first.text, contains('id=${identity.id}'));
+    expect(texts.first.text, contains('fp=${identity.fingerprint}'));
+    expect(texts.first.text, contains('port=45821'));
+
+    final addresses = records.whereType<IPAddressResourceRecord>().toList();
+    expect(addresses, hasLength(1));
+    expect(addresses.first.name, instanceName);
+    expect(addresses.first.address.address, '192.168.1.20');
   });
 
   test('ignores responses and unrelated questions', () {

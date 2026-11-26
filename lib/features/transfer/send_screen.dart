@@ -60,6 +60,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   Widget build(BuildContext context) {
     final peers = ref.watch(peersProvider).value ?? const <Peer>[];
+    final networkError = ref.watch(networkProvider).value?.error;
     // One list for every known device: paired first, then the peer requested
     // by a share shortcut, then most-recently-seen. Unpaired devices follow
     // with an inline Pair action.
@@ -189,6 +190,18 @@ class _SendScreenState extends ConsumerState<SendScreen> {
           const SizedBox(height: 24),
           Text('Send to', style: text.titleMedium),
           const SizedBox(height: 8),
+          if (networkError != null && networkError.isNotEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'Discovery: $networkError',
+                  style: text.bodySmall?.copyWith(color: scheme.error),
+                ),
+              ),
+            ),
+          if (networkError != null && networkError.isNotEmpty)
+            const SizedBox(height: 8),
           if (devices.isEmpty)
             Card(
               child: Padding(

@@ -4,7 +4,7 @@
 /// runtime package-info plugin. A test asserts it matches `pubspec.yaml`, so
 /// the two cannot silently drift.
 abstract final class WiVersion {
-  static const String current = '0.3.2';
+  static const String current = '0.4.0';
 
   /// A semantic version with the optional leading `v` and build metadata
   /// removed. Prerelease suffixes are kept only as text: releases/latest

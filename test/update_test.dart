@@ -12,6 +12,9 @@ import 'package:wishare/core/update/update_service.dart';
 import 'package:wishare/core/version.dart';
 
 void main() {
+  final current = WiVersion.parse(WiVersion.current)!;
+  final nextVersion = '${current.major}.${current.minor}.${current.patch + 1}';
+
   test('published version matches the Dart source of truth', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final match = RegExp(
@@ -84,12 +87,13 @@ void main() {
       expect(request.headers['User-Agent'], 'wishare-update-checker');
       return http.Response(
         jsonEncode({
-          'tag_name': 'v0.4.0',
+          'tag_name': 'v$nextVersion',
           'body': 'New things',
-          'html_url': 'https://github.com/ibro-3/wishare/releases/tag/v0.4.0',
+          'html_url':
+              'https://github.com/ibro-3/wishare/releases/tag/v$nextVersion',
           'assets': [
             {
-              'name': 'wishare-0.4.0-linux-x64.zip',
+              'name': 'wishare-$nextVersion-linux-x64.zip',
               'browser_download_url': 'https://example.test/linux.zip',
               'size': 42,
             },
@@ -103,7 +107,7 @@ void main() {
       platform: UpdatePlatform.linux,
     ).checkLatest();
     expect(info, isNotNull);
-    expect(info!.version, '0.4.0');
+    expect(info!.version, nextVersion);
     expect(info.releaseNotes, 'New things');
     expect(info.downloadUrl, 'https://example.test/linux.zip');
     expect(info.downloadLabel, 'Download');
@@ -126,11 +130,12 @@ void main() {
     final client = MockClient((_) async {
       return http.Response(
         jsonEncode({
-          'tag_name': 'v0.4.0',
-          'html_url': 'https://github.com/ibro-3/wishare/releases/tag/v0.4.0',
+          'tag_name': 'v$nextVersion',
+          'html_url':
+              'https://github.com/ibro-3/wishare/releases/tag/v$nextVersion',
           'assets': [
             {
-              'name': 'wishare-0.4.0-android.apk',
+              'name': 'wishare-$nextVersion-android.apk',
               'browser_download_url': 'https://example.test/app.apk',
               'size': 1,
             },
@@ -144,7 +149,7 @@ void main() {
       platform: UpdatePlatform.windows,
     ).checkLatest();
     expect(info!.asset, isNull);
-    expect(info.downloadUrl, contains('/releases/tag/v0.4.0'));
+    expect(info.downloadUrl, contains('/releases/tag/v$nextVersion'));
     expect(info.downloadLabel, 'View release');
   });
 

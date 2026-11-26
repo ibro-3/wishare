@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wishare/features/devices/scan_screen.dart';
 import 'package:wishare/features/transfer/send_screen.dart';
@@ -79,6 +81,21 @@ void main() {
     final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
     expect((tiles.first.title as Text).data, 'Paired PC');
   });
+
+  testWidgets(
+    'ScanScreen falls back to manual pairing without a camera plugin',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      await tester.pumpWidget(
+        const ProviderScope(child: MaterialApp(home: ScanScreen())),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Enter pairing details'), findsOneWidget);
+      expect(find.byType(MobileScanner), findsNothing);
+      expect(find.byTooltip('Show my code'), findsOneWidget);
+    },
+  );
 
   testWidgets('ScanScreen takes route parameters via its constructor', (
     tester,
