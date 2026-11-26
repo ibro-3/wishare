@@ -31,6 +31,7 @@ class SendScreen extends ConsumerStatefulWidget {
 
 class _SendScreenState extends ConsumerState<SendScreen> {
   final _selected = <SelectedEntry>[];
+  final _pairingIds = <String>{};
   String? _requestedPeerId;
   String? _celebratedPeerId;
   bool _busy = false;
@@ -234,10 +235,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         trailing: peer.isPaired
             ? const WiDirectionalIcon(Icons.send)
             : OutlinedButton(
-                onPressed: () => context.push(
-                  '/scan?host=${peer.address}&port=${peer.port}',
+                // No QR and no PIN: the receiver approves a request in its UI.
+                onPressed: _pairingIds.contains(peer.id)
+                    ? null
+                    : () => _requestPair(peer),
+                child: Text(
+                  _pairingIds.contains(peer.id) ? 'Waiting…' : 'Pair',
                 ),
-                child: const Text('Pair'),
               ),
         onTap: peer.isPaired && !_busy ? () => _choose(peer) : null,
       ),
@@ -249,6 +253,23 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       effects: WiSpring.fastEffects,
       child: card,
     );
+  }
+
+  Future<void> _requestPair(Peer peer) async {
+    setState(() => _pairingIds.add(peer.id));
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(networkProvider.notifier).requestPairWith(peer);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Paired with ${peer.name}')),
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('Could not pair: $error')));
+    } finally {
+      if (mounted) setState(() => _pairingIds.remove(peer.id));
+    }
   }
 
   Future<void> _pickFiles() async {

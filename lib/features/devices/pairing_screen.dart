@@ -18,7 +18,7 @@ class PairingScreen extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Pair a device')),
+      appBar: AppBar(title: const Text('Show pairing code')),
       body: network.when(
         loading: () => const WiLoadingIndicator(),
         error: (error, _) => Center(child: Text('Network error: $error')),
@@ -34,14 +34,15 @@ class PairingScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Scan this code on the other device',
+                      'Let the other device scan this code',
                       style: text.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'The code contains this device’s certificate fingerprint, '
-                      'so the connection can be verified automatically.',
+                      'Generate this code on the device that will receive '
+                      'files, then scan it from the sending device. It carries '
+                      'this device’s LAN address and certificate fingerprint.',
                       style: text.bodySmall,
                       textAlign: TextAlign.center,
                     ),

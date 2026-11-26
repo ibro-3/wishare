@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../crypto/certificate_manager.dart';
+import '../models/pair_request.dart';
 import '../models/peer.dart';
 import '../models/settings.dart';
 import '../models/transfer.dart';
@@ -99,7 +100,25 @@ class PeersController extends AsyncNotifier<List<Peer>> {
 
   /// [fingerprint] is the sender identity observed during pairing. Never pin
   /// our own certificate here: that would make every sender look trusted.
-  Future<void> markPaired(String id, String name, {String? fingerprint}) async {
+  /// Replace any existing record for the same device after a successful
+  /// request/approve pairing, instead of leaving a duplicate unpaired row.
+  Future<void> markPairedRemotely(Peer peer) async {
+    final next = <Peer>[
+      peer,
+      ...(state.value ?? const <Peer>[]).where(
+        (existing) => existing.id != peer.id,
+      ),
+    ];
+    state = AsyncData(next);
+    await _save(next);
+  }
+
+  Future<void> markPaired(
+    String id,
+    String name, {
+    String? fingerprint,
+    PairingMethod method = PairingMethod.qr,
+  }) async {
     final observed = fingerprint != null && isValidFingerprint(fingerprint)
         ? normaliseFingerprint(fingerprint)
         : null;
@@ -122,7 +141,7 @@ class PeersController extends AsyncNotifier<List<Peer>> {
         colorSeed: peer.colorSeed,
         certificateFingerprint: trustedFingerprint,
         sessionToken: peer.sessionToken,
-        pairingMethod: PairingMethod.qr,
+        pairingMethod: method,
         pairedAt: pairedAt,
         lastSeen: peer.lastSeen,
         trustLevel: TrustLevel.paired,
@@ -170,6 +189,35 @@ class TransfersController extends AsyncNotifier<List<Transfer>> {
   Future<void> _save(List<Transfer> transfers) async {
     final store = await ref.read(storeProvider.future);
     await store.saveTransfers(transfers);
+  }
+}
+
+/// Incoming no-code pairing requests waiting on the receiver's approval.
+final pairRequestsProvider =
+    AsyncNotifierProvider<PairRequestsController, List<PairRequest>>(
+      PairRequestsController.new,
+    );
+
+class PairRequestsController extends AsyncNotifier<List<PairRequest>> {
+  StreamSubscription<PairRequest>? _subscription;
+
+  @override
+  Future<List<PairRequest>> build() async {
+    final network = await ref.watch(networkProvider.future);
+    ref.onDispose(() => _subscription?.cancel());
+    final existing = network.server.pendingRequests;
+    _subscription = network.server.pairRequests.listen((request) {
+      final current = state.value ?? const <PairRequest>[];
+      if (current.any((entry) => entry.id == request.id)) return;
+      state = AsyncData([...current, request]);
+    });
+    return existing;
+  }
+
+  void remove(String id) {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData(current.where((request) => request.id != id).toList());
   }
 }
 
@@ -280,6 +328,9 @@ class NetworkController extends AsyncNotifier<NetworkState> {
               event['id'] as String,
               event['name'] as String? ?? 'Wishare device',
               fingerprint: event['fingerprint'] as String?,
+              method: event['method'] == 'request'
+                  ? PairingMethod.request
+                  : PairingMethod.qr,
             );
       }),
     ]);
@@ -297,6 +348,56 @@ class NetworkController extends AsyncNotifier<NetworkState> {
       broadcastEnabled: settings.broadcastEnabled,
     );
     state = AsyncData(current.copyWith());
+  }
+
+  /// Receiver side: called from the pairing prompt after explicit approval.
+  Future<void> approvePairRequest(String id) async {
+    final state = await future;
+    state.server.approvePairRequest(id);
+  }
+
+  /// Receiver side: decline and keep the request marked declined so the
+  /// polling sender gets a clear answer instead of a 404.
+  Future<void> declinePairRequest(String id) async {
+    final state = await future;
+    state.server.declinePairRequest(id);
+  }
+
+  /// Sender side: ask a discovered nearby device to pair. No QR and no PIN —
+  /// the receiver must approve the request in its UI before a token is issued.
+  Future<void> requestPairWith(Peer peer) async {
+    final fingerprint = peer.certificateFingerprint;
+    if (fingerprint == null || !isValidFingerprint(fingerprint)) {
+      throw const FormatException(
+        'This device has no verified certificate fingerprint yet',
+      );
+    }
+    final identity = await ref.read(identityProvider.future);
+    final settings = await ref.read(settingsProvider.future);
+    final client = WishareClient(
+      host: peer.address,
+      port: peer.port,
+      expectedFingerprint: fingerprint,
+      senderId: identity.id,
+      senderFingerprint: identity.fingerprint,
+    );
+    await client.requestPair(
+      id: identity.id,
+      name: settings.deviceName,
+      fingerprint: identity.fingerprint,
+    );
+    final token = await client.waitForPairApproval(identity.id);
+    await ref
+        .read(peersProvider.notifier)
+        .markPairedRemotely(
+          peer.copyWith(
+            certificateFingerprint: fingerprint,
+            sessionToken: token,
+            pairingMethod: PairingMethod.request,
+            pairedAt: DateTime.now(),
+            trustLevel: TrustLevel.paired,
+          ),
+        );
   }
 
   /// Sender side: verify the receiver certificate, redeem the PIN, and store

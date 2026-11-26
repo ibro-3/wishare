@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 
 import '../crypto/certificate_manager.dart';
 import '../models/manifest.dart';
+import '../models/pair_request.dart';
 import '../models/transfer.dart';
 import 'protocol.dart';
 
@@ -61,6 +62,10 @@ class WishareServer {
   static const Duration _tokenLifetime = Duration(days: 30);
   static const int _maxEndedTransfers = 100;
   static const Duration _endedTransferLifetime = Duration(hours: 1);
+  // My design decision (not in M3): pairing requests are short-lived and
+  // bounded so a hostile device cannot fill memory with pending prompts.
+  static const Duration _pairRequestLifetime = Duration(minutes: 2);
+  static const int _maxPairRequests = 8;
 
   final DeviceIdentity identity;
   String downloadDirectory;
@@ -71,6 +76,8 @@ class WishareServer {
   final Map<String, DateTime> _tokenTouched = {};
   final Map<String, PendingTransfer> _pending = {};
   final Map<String, PendingTransfer> _ended = {};
+  final Map<String, PairRequest> _pairRequests = {};
+  final Map<String, DateTime> _declinedPairRequests = {};
 
   final StreamController<TransferManifest> _offers =
       StreamController<TransferManifest>.broadcast();
@@ -78,10 +85,18 @@ class WishareServer {
       StreamController<Transfer>.broadcast();
   final StreamController<Map<String, dynamic>> _pairings =
       StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<PairRequest> _pairRequestStream =
+      StreamController<PairRequest>.broadcast();
 
   Stream<Map<String, dynamic>> get pairings => _pairings.stream;
   Stream<TransferManifest> get offers => _offers.stream;
   Stream<Transfer> get updates => _updates.stream;
+  Stream<PairRequest> get pairRequests => _pairRequestStream.stream;
+
+  /// Snapshot used by the UI provider so a request emitted before it subscribed
+  /// (for example while the app was in the background) is not lost.
+  List<PairRequest> get pendingRequests =>
+      List.unmodifiable(_pairRequests.values);
   String? get pin => _pin;
   bool get isRunning => _server != null;
 
@@ -188,6 +203,7 @@ class WishareServer {
     await _offers.close();
     await _updates.close();
     await _pairings.close();
+    await _pairRequestStream.close();
   }
 
   Future<void> _handle(HttpRequest request) async {
@@ -203,6 +219,10 @@ class WishareServer {
           });
         case 'POST' when request.uri.path == '/pair':
           await _pair(request, response);
+        case 'POST' when request.uri.path == '/pair-request':
+          await _requestPair(request, response);
+        case 'GET' when request.uri.path == '/pair-request/status':
+          _pairRequestStatus(request, response);
         case 'POST' when request.uri.path == '/request':
           await _offer(request, response);
         case 'GET' when request.uri.path == '/status':
@@ -260,10 +280,108 @@ class WishareServer {
       return;
     }
     final id = body['id'] as String?;
-    if (id == null || id.isEmpty) {
-      _writeJson(response, 400, {'error': 'Missing device id'});
+    if (id == null || !isValidTransferId(id)) {
+      _writeJson(response, 400, {'error': 'Invalid device id'});
       return;
     }
+    // PIN pairing keeps its historical behaviour: a missing fingerprint is
+    // recorded as null rather than rejecting the request.
+    final fingerprint = _observedSenderFingerprint(request);
+    final token = _issueToken(id);
+    _pin = null; // single-use PIN
+    _pairings.add({
+      'id': id,
+      'name': body['name'] ?? 'Wishare device',
+      'fingerprint': fingerprint,
+    });
+    _writeJson(response, 200, {
+      'token': token,
+      'fingerprint': identity.fingerprint,
+    });
+  }
+
+  /// No-code path: a nearby sender asks and the receiver approves in the UI.
+  Future<void> _requestPair(HttpRequest request, HttpResponse response) async {
+    final body = await _readJson(request);
+    final id = body['id'] as String?;
+    if (id == null || !isValidTransferId(id)) {
+      _writeJson(response, 400, {'error': 'Invalid device id'});
+      return;
+    }
+    // Never trust a claimed fingerprint: TOFU uses what TLS actually saw.
+    final fingerprint = _observedSenderFingerprint(request);
+    if (fingerprint == null) {
+      _writeJson(response, 400, {'error': 'Missing sender fingerprint'});
+      return;
+    }
+    final claimedName = body['name'] as String?;
+    final name =
+        claimedName != null &&
+            claimedName.trim().isNotEmpty &&
+            claimedName.length <= 80
+        ? claimedName.trim()
+        : 'Wishare device';
+    _prunePairRequests();
+    final pending = PairRequest(
+      id: id,
+      name: name,
+      fingerprint: fingerprint,
+      createdAt: DateTime.now(),
+    );
+    _pairRequests[id] = pending;
+    _declinedPairRequests.remove(id);
+    _pairRequestStream.add(pending);
+    _writeJson(response, 202, {'status': 'pending'});
+  }
+
+  void _pairRequestStatus(HttpRequest request, HttpResponse response) {
+    final id = request.uri.queryParameters['id'];
+    if (id == null || !isValidTransferId(id)) {
+      _writeJson(response, 400, {'error': 'Invalid device id'});
+      return;
+    }
+    _prunePairRequests();
+    final token = _tokens[id];
+    if (token != null) {
+      _writeJson(response, 200, {
+        'status': 'approved',
+        'token': token,
+        'fingerprint': identity.fingerprint,
+      });
+      return;
+    }
+    if (_declinedPairRequests.containsKey(id)) {
+      _writeJson(response, 200, {'status': 'declined'});
+      return;
+    }
+    if (_pairRequests.containsKey(id)) {
+      _writeJson(response, 200, {'status': 'pending'});
+      return;
+    }
+    _writeJson(response, 404, {'error': 'No pairing request for this device'});
+  }
+
+  /// Called by the receiver's UI. Issuing the token only here means nobody is
+  /// paired until a human explicitly approves the request.
+  void approvePairRequest(String id) {
+    final pending = _pairRequests.remove(id);
+    if (pending == null) return;
+    _issueToken(id);
+    _pairings.add({
+      'id': id,
+      'name': pending.name,
+      'fingerprint': pending.fingerprint,
+      'method': 'request',
+    });
+  }
+
+  void declinePairRequest(String id) {
+    _pairRequests.remove(id);
+    _declinedPairRequests[id] = DateTime.now();
+    _prunePairRequests();
+  }
+
+  String _issueToken(String id) {
     final token = const Uuid4().newId();
     // Re-pairing replaces the old token and prunes stale sessions.
     _tokens.remove(id);
@@ -271,34 +389,36 @@ class WishareServer {
     _pruneTokens();
     _tokens[id] = token;
     _tokenTouched[id] = DateTime.now();
-    _pin = null; // single-use PIN
+    return token;
+  }
 
-    // TOFU: pin the *sender's* identity, never our own. Prefer the TLS client
-    // certificate; fall back to a validated header when no client cert is
-    // presented (a common situation with self-signed certs).
-    String? senderFingerprint;
+  void _prunePairRequests() {
+    final cutoff = DateTime.now().subtract(_pairRequestLifetime);
+    _pairRequests.removeWhere((_, value) => value.createdAt.isBefore(cutoff));
+    _declinedPairRequests.removeWhere((_, value) => value.isBefore(cutoff));
+    while (_pairRequests.length >= _maxPairRequests) {
+      final oldest = _pairRequests.entries.reduce(
+        (a, b) => a.value.createdAt.isBefore(b.value.createdAt) ? a : b,
+      );
+      _pairRequests.remove(oldest.key);
+    }
+  }
+
+  /// Prefer the TLS client certificate; fall back to a validated header when
+  /// no client cert is presented (a common situation with self-signed certs).
+  String? _observedSenderFingerprint(HttpRequest request) {
     try {
       final certificate = request.certificate;
       if (certificate != null) {
         final observed = normaliseFingerprint(
           sha256.convert(certificate.der).toString(),
         );
-        if (isValidFingerprint(observed)) senderFingerprint = observed;
+        if (isValidFingerprint(observed)) return observed;
       }
     } on Object {
       // Certificate access is best-effort; the header is the fallback.
     }
-    senderFingerprint ??= _headerFingerprint(request);
-
-    _pairings.add({
-      'id': id,
-      'name': body['name'] ?? 'Wishare device',
-      'fingerprint': senderFingerprint,
-    });
-    _writeJson(response, 200, {
-      'token': token,
-      'fingerprint': identity.fingerprint,
-    });
+    return _headerFingerprint(request);
   }
 
   String? _headerFingerprint(HttpRequest request) {

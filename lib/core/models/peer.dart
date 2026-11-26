@@ -1,7 +1,7 @@
 import '../network/protocol.dart';
 import 'parse_helpers.dart';
 
-enum PairingMethod { qr, manual }
+enum PairingMethod { qr, manual, request }
 
 enum TrustLevel { paired, untrusted, revoked }
 

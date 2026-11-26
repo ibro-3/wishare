@@ -23,12 +23,23 @@ void main() {
   });
 
   test('semantic comparison ignores v prefix and build metadata', () {
-    expect(WiVersion.isNewer('v0.4.0', WiVersion.current), isTrue);
-    expect(WiVersion.isNewer('v0.3.1', WiVersion.current), isTrue);
-    expect(WiVersion.isNewer('0.3.0+7', WiVersion.current), isFalse);
-    expect(WiVersion.isNewer('0.2.9', WiVersion.current), isFalse);
+    final current = WiVersion.parse(WiVersion.current)!;
+    final nextMinor = '${current.major}.${current.minor + 1}.0';
+    expect(WiVersion.isNewer('v$nextMinor', WiVersion.current), isTrue);
+    expect(
+      WiVersion.isNewer(
+        '${current.major}.${current.minor}.${current.patch + 1}',
+        WiVersion.current,
+      ),
+      isTrue,
+    );
+    expect(
+      WiVersion.isNewer('${WiVersion.current}+7', WiVersion.current),
+      isFalse,
+    );
+    expect(WiVersion.isNewer('0.0.1', WiVersion.current), isFalse);
     expect(WiVersion.isNewer('nonsense', WiVersion.current), isFalse);
-    expect(UpdateService.normaliseVersion('v0.4.0+12'), '0.4.0');
+    expect(UpdateService.normaliseVersion('v$nextMinor+12'), nextMinor);
   });
 
   test('asset picker prefers the exact build then the platform pattern', () {

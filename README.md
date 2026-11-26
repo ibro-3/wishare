@@ -7,7 +7,7 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.3.0)
+## Current status (v0.3.1)
 
 Implemented:
 
@@ -30,7 +30,9 @@ Implemented:
 - Device discovery via a DNS-SD mDNS responder (`_wishare._tcp.local`) plus a
   UDP broadcast heartbeat, with manual IP/QR fallback.
 - Self-signed P-256 certificate generation and TOFU fingerprint pinning.
-- QR pairing and manual pairing with PIN + displayed fingerprint confirmation.
+- Three pairing paths: QR scan, request/approve with a nearby device (no code
+  at all), and manual IP/PIN/fingerprint entry. All show the certificate
+  fingerprint for confirmation.
 - HTTPS receiver and sender: pairing token, transfer offers, chunk streaming
   with resume, checksum verification, safe folder extraction, transfer history.
 - Android foreground service declaration, Wi-Fi lock and "Share to Wishare"
@@ -51,6 +53,31 @@ flutter pub get
 flutter run -d linux        # or -d android / -d windows (Windows host required)
 ```
 
+## Pairing (two devices on the same network)
+
+1. On the device that will **receive** files, tap the **Pair** FAB, then
+   **Show my code** in the top bar, then **Generate pairing code**. It shows a
+   QR code, a single-use 6-digit PIN and the certificate fingerprint.
+2. On the device that will **send** files, tap the **Pair** FAB and point the
+   camera at the QR code shown on the receiver.
+3. Check the name, address and shortened fingerprint in the confirmation
+   dialog, then tap **Connect**. The fingerprint is pinned for later transfers.
+
+No camera? Tap the keyboard button in the scanner and enter the receiver's IP
+address, port (45821), PIN and full fingerprint by hand. **Fetch fingerprint
+from device** fills the fingerprint over HTTPS, but still compare it with the
+one shown on the receiver before connecting.
+
+### Pairing without a QR code
+
+Nearby devices found by mDNS/UDP appear in the **Send** tab automatically. Tap
+**Pair** on one of them: the receiving device gets a **Pairing request** dialog
+showing the sender's name and certificate fingerprint, with **Approve** and
+**Decline** actions. The sender waits for the answer; a session token is issued
+only after the receiver approves. No QR code and no PIN are involved. Requests
+expire after two minutes, and at most eight can be pending. This is the
+recommended path when both devices are on the same network.
+
 Release builds:
 
 ```bash
@@ -61,17 +88,17 @@ flutter build linux --release
 # flutter build windows --release  (Windows host required)
 ```
 
-Publishing a GitHub release (v0.3.0):
+Publishing a GitHub release (v0.3.1):
 
 ```bash
-git tag v0.3.0 && git push origin v0.3.0
+git tag v0.3.1 && git push origin v0.3.1
 ```
 
 `.github/workflows/release.yml` builds Windows, Linux and Android in parallel,
-then attaches `wishare-0.3.0-windows-x64.zip`, `wishare-0.3.0-linux-x64.zip`,
-`wishare-0.3.0-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
+then attaches `wishare-0.3.1-windows-x64.zip`, `wishare-0.3.1-linux-x64.zip`,
+`wishare-0.3.1-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
 release. The workflow can also be started manually with `workflow_dispatch` and
-a tag name. `dist/` holds the older local assets; v0.3.0 assets are produced by
+a tag name. `dist/` holds the older local assets; v0.3.1 assets are produced by
 CI when the tag is pushed. The update manager reads these releases through
 `https://api.github.com/repos/ibro-3/wishare/releases/latest`; keep asset names
 in the `wishare-<version>-<platform>.<ext>` form so the platform picker works.
@@ -110,6 +137,10 @@ lib/features        Devices, pairing, send, receive, transfers, settings UI
   (TOFU) and pins it for later transfers; a changed fingerprint blocks the
   connection.
 - A session token is issued after pairing and required on every API call.
+- For request/approve pairing, the receiver pins the fingerprint observed from
+  the TLS connection (or a validated header) and displays it on the approval
+  prompt. The sender re-verifies the receiver's fingerprint before accepting
+  the returned token. No token exists until a human taps **Approve**.
 - Every incoming transfer must be explicitly accepted. Paths are canonicalised
   and constrained to a staging directory; checksums are verified before files
   are promoted to the download folder.

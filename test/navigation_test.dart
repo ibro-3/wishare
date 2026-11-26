@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wishare/app.dart';
+import 'package:wishare/core/models/settings.dart';
+import 'package:wishare/core/state/providers.dart';
 import 'package:wishare/core/theme/wishare_motion.dart';
 import 'package:wishare/core/theme/wishare_theme.dart';
 
@@ -52,6 +54,37 @@ void main() {
     expect(find.text('Receive'), findsWidgets);
   });
 
+  testWidgets('the scanner can open the QR generator for the other device', (
+    tester,
+  ) async {
+    final theme = WishareTheme.build(
+      WishareTheme.baseline(Brightness.light),
+      contrast: WiContrast.standard,
+      reduceMotion: true,
+    );
+    addTearDown(() => appRouter.go('/send'));
+    await tester.pumpWidget(
+      ProviderScope(
+        // path_provider is unavailable on the Linux test host.
+        overrides: [
+          settingsProvider.overrideWith(() => _FixedSettingsController()),
+        ],
+        child: MaterialApp.router(routerConfig: appRouter, theme: theme),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    appRouter.go('/scan');
+    await tester.pumpAndSettle();
+    expect(find.text('Scan pairing code'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Show my code'));
+    await tester.pumpAndSettle();
+    expect(find.text('Show pairing code'), findsWidgets);
+    // The scanner is now underneath the pushed generator page.
+    expect(find.byTooltip('Show my code'), findsNothing);
+  });
+
   testWidgets('top-level fade waits for the outgoing screen', (tester) async {
     Widget build(double value, AnimationStatus status) => Directionality(
       textDirection: TextDirection.ltr,
@@ -81,6 +114,13 @@ void main() {
     await tester.pumpWidget(build(0.5, AnimationStatus.reverse));
     expect(tester.widget<Opacity>(find.byType(Opacity)).opacity, 0);
   });
+}
+
+class _FixedSettingsController extends SettingsController {
+  @override
+  Future<AppSettings> build() async =>
+      AppSettings.initial('/tmp/wishare')
+          .copyWith(discoveryEnabled: false, broadcastEnabled: false);
 }
 
 class _StoppedAnimation extends AlwaysStoppedAnimation<double> {

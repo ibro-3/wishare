@@ -62,12 +62,19 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pair a device'),
+        title: const Text('Scan pairing code'),
         actions: [
           IconButton(
             tooltip: _manual ? 'Scan a code' : 'Enter details manually',
             icon: Icon(_manual ? Icons.qr_code_scanner : Icons.keyboard),
             onPressed: () => setState(() => _manual = !_manual),
+          ),
+          // The generator screen is where the other device displays the code
+          // this camera needs. M3 app bars carry up to two trailing buttons.
+          IconButton(
+            tooltip: 'Show my code',
+            icon: const Icon(Icons.qr_code_outlined),
+            onPressed: () => context.push('/pair'),
           ),
         ],
       ),

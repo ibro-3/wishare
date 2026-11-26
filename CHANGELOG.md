@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.1 — pairing without a QR code
+
+- Fixed the pairing dead end: the screen that generates the QR code had no
+  UI entry point. The scanner now has a "Show my code" action that opens it,
+  and the two screens are titled "Scan pairing code" and "Show pairing code"
+  so it is clear which device does which.
+- Added request/approve pairing for nearby devices: tap **Pair** on a nearby
+  device in Send and the receiver gets a dialog with the observed certificate
+  fingerprint plus **Approve** / **Decline**. No QR code and no PIN are typed
+  anywhere. A session token is issued only on approval; requests expire after
+  two minutes and are bounded to eight pending entries.
+- Manual IP/PIN/fingerprint entry remains available from the scanner's keyboard
+  button as a fallback.
+
 ## v0.3.0 — update manager
 
 - Added an update manager backed by the GitHub Releases API. A passive check

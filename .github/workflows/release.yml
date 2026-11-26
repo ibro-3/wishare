@@ -7,12 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (for example v0.3.0)'
+        description: 'Release tag (for example v0.3.1)'
         required: true
-        default: 'v0.3.0'
+        default: 'v0.3.1'
 
 env:
-  VERSION: 0.3.0
+  VERSION: 0.3.1
   FLUTTER_VERSION: 3.50.1
 
 jobs:

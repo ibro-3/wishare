@@ -23,6 +23,18 @@ class TransferDeclinedException implements Exception {
       : 'Transfer $transferId ended with status $status';
 }
 
+/// Thrown when the receiver declines or drops a no-code pairing request.
+class PairRequestException implements Exception {
+  const PairRequestException(this.status);
+
+  final String status;
+
+  @override
+  String toString() => status == 'declined'
+      ? 'The other device declined the pairing request'
+      : 'Pairing request $status';
+}
+
 /// HTTPS sender. A peer's certificate fingerprint is verified on every
 /// connection (TOFU after pairing). Pairing additionally requires the PIN.
 class WishareClient {
@@ -114,6 +126,54 @@ class WishareClient {
       throw const FormatException('Certificate fingerprint mismatch');
     }
     return token;
+  }
+
+  /// Ask a nearby receiver to approve pairing without a QR code or PIN.
+  Future<void> requestPair({
+    required String id,
+    required String name,
+    required String fingerprint,
+  }) async {
+    senderId = id;
+    await _jsonRequest(
+      'POST',
+      '/pair-request',
+      body: {'id': id, 'name': name, 'fingerprint': fingerprint},
+    );
+  }
+
+  /// Poll until the receiver approves or declines. The returned token is only
+  /// issued on approval; the receiver fingerprint is re-verified here too.
+  Future<String> waitForPairApproval(
+    String id, {
+    Duration timeout = const Duration(minutes: 2),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final result = await _jsonRequest(
+        'GET',
+        '/pair-request/status',
+        query: {'id': id},
+      );
+      switch (result['status']) {
+        case 'approved':
+          final returned = normaliseFingerprint(
+            result['fingerprint'] as String? ?? '',
+          );
+          if (returned != normaliseFingerprint(expectedFingerprint)) {
+            throw const FormatException('Certificate fingerprint mismatch');
+          }
+          token = result['token'] as String? ?? '';
+          if (token.isEmpty) {
+            throw const FormatException('Missing session token');
+          }
+          return token;
+        case 'declined':
+          throw const PairRequestException('declined');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    throw TimeoutException('The other device did not respond', timeout);
   }
 
   Future<void> sendManifest(TransferManifest manifest) async {

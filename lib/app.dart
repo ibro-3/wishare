@@ -4,12 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'core/models/pair_request.dart';
 import 'core/models/settings.dart';
 import 'core/models/transfer.dart';
+import 'core/network/protocol.dart';
 import 'core/state/providers.dart';
 import 'core/state/update_provider.dart';
 import 'core/theme/wishare_motion.dart';
 import 'core/theme/wishare_theme.dart';
+import 'core/theme/wishare_type.dart';
 import 'features/devices/pairing_screen.dart';
 import 'features/devices/scan_screen.dart';
 import 'features/settings/settings_screen.dart';
@@ -152,6 +155,17 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   bool _celebratedFirstCompletion = false;
+  bool _pairDialogOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // A request can arrive before the shell mounts (e.g. resuming from the
+    // background); ref.listen only reports later changes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeShowPairRequest();
+    });
+  }
 
   int get _index =>
       GoRouterState.of(context).uri.path.startsWith('/receive') ? 1 : 0;
@@ -160,6 +174,11 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(pairRequestsProvider, (_, _) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _maybeShowPairRequest();
+      });
+    });
     ref.listen(transfersProvider, (previous, next) {
       final transfers = next.value ?? const <Transfer>[];
       final previousById = {
@@ -269,6 +288,80 @@ class _AppShellState extends ConsumerState<AppShell> {
       },
       child: shell,
     );
+  }
+
+  /// Show one pairing prompt at a time, then move to the next queued request.
+  void _maybeShowPairRequest() {
+    if (_pairDialogOpen || !mounted) return;
+    final requests =
+        ref.read(pairRequestsProvider).value ?? const <PairRequest>[];
+    if (requests.isEmpty) return;
+    _pairDialogOpen = true;
+    _showPairRequest(requests.first).whenComplete(() {
+      _pairDialogOpen = false;
+      if (mounted) _maybeShowPairRequest();
+    });
+  }
+
+  Future<void> _showPairRequest(PairRequest request) async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final scheme = Theme.of(dialogContext).colorScheme;
+        final dialogText = Theme.of(dialogContext).textTheme;
+        return AlertDialog(
+          // No spring reveal: this is a decision prompt, not a hero moment.
+          icon: CircleAvatar(
+            radius: 28,
+            backgroundColor: scheme.primaryContainer,
+            child: Icon(Icons.link, size: 32, color: scheme.onPrimaryContainer),
+          ),
+          title: const Text('Pairing request'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${request.name} wants to pair with this device.',
+                style: dialogText.bodyMedium,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Certificate ${abbreviateFingerprint(request.fingerprint, edge: 16)}',
+                style: dialogText.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Only approve if this matches the certificate fingerprint in '
+                'the sender’s Settings.',
+                style: dialogText.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Decline'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                textStyle: dialogContext.emphasizedText.labelLarge,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Approve'),
+            ),
+          ],
+        );
+      },
+    );
+    if (approved == true) {
+      await ref.read(networkProvider.notifier).approvePairRequest(request.id);
+    } else {
+      await ref.read(networkProvider.notifier).declinePairRequest(request.id);
+    }
+    if (mounted) {
+      ref.read(pairRequestsProvider.notifier).remove(request.id);
+    }
   }
 
   void _showCompletion(Transfer transfer) {
