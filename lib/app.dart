@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'core/models/settings.dart';
 import 'core/models/transfer.dart';
 import 'core/state/providers.dart';
+import 'core/state/update_provider.dart';
 import 'core/theme/wishare_motion.dart';
 import 'core/theme/wishare_theme.dart';
 import 'features/devices/pairing_screen.dart';
@@ -101,6 +102,9 @@ class WishareApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Single startup trigger for the passive update check. It is lazy and
+    // gated on the Settings toggle inside the provider.
+    ref.watch(startupUpdateCheckProvider);
     final settings =
         ref.watch(settingsProvider).value ?? AppSettings.initial('');
     // Read the platform setting from the view: MaterialApp inserts MediaQuery
@@ -179,6 +183,9 @@ class _AppShellState extends ConsumerState<AppShell> {
         (ref.watch(transfersProvider).value ?? const <Transfer>[])
             .where((transfer) => transfer.status == TransferStatus.offered)
             .length;
+    // From M3: a small badge marks an unread notification on a destination.
+    // Here it signals a newer release without interrupting the user at startup.
+    final updateAvailable = ref.watch(updateProvider).value?.showBadge ?? false;
 
     final shell = Scaffold(
       appBar: AppBar(
@@ -192,8 +199,13 @@ class _AppShellState extends ConsumerState<AppShell> {
             onPressed: () => context.push('/history'),
           ),
           IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
+            tooltip: updateAvailable
+                ? 'Settings, update available'
+                : 'Settings',
+            icon: Badge(
+              isLabelVisible: updateAvailable,
+              child: const Icon(Icons.settings_outlined),
+            ),
             onPressed: () => context.push('/settings'),
           ),
         ],

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.3.0 — update manager
+
+- Added an update manager backed by the GitHub Releases API. A passive check
+  runs once on startup (cached for 15 minutes) and only raises a small badge
+  on the Settings icon — it never interrupts the user. Settings has a new
+  "Updates" card with a manual "Check now" action, release notes and a
+  platform-aware Download button; when no matching build exists it opens the
+  release page instead.
+- "Check on startup" is a Settings toggle, default on, so the app's single
+  outbound internet call can be disabled. Manual checks always work.
+- Manual check results use an M3 snackbar: "up to date" auto-dismisses, a
+  failure offers Retry. An available update opens a 28dp dialog with the
+  release notes and a filled Download action beside a text "Later" action.
+  No new hero moments or hand-authored springs were added.
+- Version `0.3.0` is now a single Dart constant used by the Settings footer
+  and the update comparison; a test asserts it matches `pubspec.yaml`.
+
 ## v0.2.0 — navigation and motion
 
 - History and Settings are now pushed above the shell instead of replacing it;

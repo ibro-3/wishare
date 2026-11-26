@@ -18,6 +18,7 @@ class AppSettings {
     required this.broadcastEnabled,
     required this.notificationsEnabled,
     required this.startMinimized,
+    required this.autoUpdateCheck,
     required this.maxFolderDepth,
     required this.maxFiles,
     required this.maxTransferBytes,
@@ -32,6 +33,10 @@ class AppSettings {
   final bool broadcastEnabled;
   final bool notificationsEnabled;
   final bool startMinimized;
+
+  /// My design decision (not in M3): the one outbound internet call gets an
+  /// explicit opt-out, since the rest of Wishare is LAN-only.
+  final bool autoUpdateCheck;
   final int maxFolderDepth;
   final int maxFiles;
   final int maxTransferBytes;
@@ -47,6 +52,7 @@ class AppSettings {
     broadcastEnabled: true,
     notificationsEnabled: true,
     startMinimized: false,
+    autoUpdateCheck: true,
     maxFolderDepth: 32,
     maxFiles: 10000,
     maxTransferBytes: 20 * 1024 * 1024 * 1024,
@@ -69,6 +75,7 @@ class AppSettings {
     bool? broadcastEnabled,
     bool? notificationsEnabled,
     bool? startMinimized,
+    bool? autoUpdateCheck,
     int? maxFolderDepth,
     int? maxFiles,
     int? maxTransferBytes,
@@ -83,6 +90,7 @@ class AppSettings {
       broadcastEnabled: broadcastEnabled ?? this.broadcastEnabled,
       notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
       startMinimized: startMinimized ?? this.startMinimized,
+      autoUpdateCheck: autoUpdateCheck ?? this.autoUpdateCheck,
       maxFolderDepth: maxFolderDepth ?? this.maxFolderDepth,
       maxFiles: maxFiles ?? this.maxFiles,
       maxTransferBytes: maxTransferBytes ?? this.maxTransferBytes,
@@ -99,6 +107,7 @@ class AppSettings {
     'broadcastEnabled': broadcastEnabled,
     'notificationsEnabled': notificationsEnabled,
     'startMinimized': startMinimized,
+    'autoUpdateCheck': autoUpdateCheck,
     'maxFolderDepth': maxFolderDepth,
     'maxFiles': maxFiles,
     'maxTransferBytes': maxTransferBytes,
@@ -121,6 +130,8 @@ class AppSettings {
       broadcastEnabled: boolean(json['broadcastEnabled'], true),
       notificationsEnabled: boolean(json['notificationsEnabled'], true),
       startMinimized: boolean(json['startMinimized'], false),
+      // Preferences written by 0.2.x have no key: keep checking by default.
+      autoUpdateCheck: boolean(json['autoUpdateCheck'], true),
       maxFolderDepth: depth < 1 ? 32 : (depth > 128 ? 128 : depth),
       maxFiles: files < 1 ? 10000 : (files > 100000 ? 100000 : files),
       maxTransferBytes: bytes < 1 ? 20 * 1024 * 1024 * 1024 : bytes,

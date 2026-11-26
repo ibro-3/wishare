@@ -3,11 +3,16 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/settings.dart';
 import '../../core/network/protocol.dart';
 import '../../core/state/providers.dart';
+import '../../core/state/update_provider.dart';
 import '../../core/theme/wishare_theme.dart';
+import '../../core/theme/wishare_type.dart';
+import '../../core/update/update_service.dart';
+import '../../core/version.dart';
 import '../../shared/widgets/loading_indicator.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -17,6 +22,7 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider).value;
     final identityAsync = ref.watch(identityProvider);
+    final updateState = ref.watch(updateProvider).value ?? const UpdateState();
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
 
@@ -38,6 +44,207 @@ class SettingsScreen extends ConsumerWidget {
       // which would drop transfers already in flight.
       await ref.read(networkProvider.notifier).applySettings(next);
     }
+
+    String updateSubtitle() {
+      final checked = updateState.checkedAt;
+      final time = checked == null
+          ? ''
+          : ' · ${checked.hour.toString().padLeft(2, '0')}:'
+                '${checked.minute.toString().padLeft(2, '0')}';
+      return switch (updateState.status) {
+        UpdateStatus.checking => 'Checking for updates…',
+        UpdateStatus.available =>
+          'Version ${updateState.info?.version ?? '?'} is available$time',
+        UpdateStatus.upToDate => 'Up to date · Wishare $WiVersion.current$time',
+        UpdateStatus.error =>
+          'Couldn’t check · ${updateState.error ?? 'try again'}',
+        UpdateStatus.idle => 'Wishare $WiVersion.current',
+      };
+    }
+
+    Future<void> openDownload(UpdateInfo info) async {
+      final uri = Uri.tryParse(info.downloadUrl);
+      if (uri == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Download link is unavailable')),
+        );
+        return;
+      }
+      try {
+        final canOpen = await canLaunchUrl(uri);
+        final launched =
+            canOpen &&
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!launched && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Couldn’t open the download page')),
+          );
+        }
+      } on Object {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Couldn’t open the download page')),
+          );
+        }
+      }
+    }
+
+    void showUpdateDialog(UpdateInfo info) {
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          final dialogScheme = Theme.of(dialogContext).colorScheme;
+          final dialogText = Theme.of(dialogContext).textTheme;
+          final notes = info.releaseNotes.isEmpty
+              ? 'A new version of Wishare is ready to download.'
+              : info.releaseNotes;
+          return AlertDialog(
+            // Not a hero moment: the product already has two, and M3 says one
+            // or two per product. This is a plain status icon, not a reveal.
+            icon: CircleAvatar(
+              radius: 28,
+              backgroundColor: dialogScheme.primaryContainer,
+              child: Icon(
+                Icons.system_update,
+                size: 32,
+                color: dialogScheme.onPrimaryContainer,
+              ),
+            ),
+            title: Text('Update available · ${info.version}'),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: SingleChildScrollView(
+                child: Text(notes, style: dialogText.bodyMedium),
+              ),
+            ),
+            actions: [
+              // From M3: the lower-emphasis text button sits left of the
+              // higher-emphasis filled button in a two-button row.
+              TextButton(
+                onPressed: () {
+                  ref.read(updateProvider.notifier).dismiss();
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('Later'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  textStyle: dialogContext.emphasizedText.labelLarge,
+                ),
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  openDownload(info);
+                },
+                icon: const Icon(Icons.open_in_new, size: 20),
+                label: Text(
+                  info.downloadLabel,
+                  style: dialogContext.emphasizedText.labelLarge,
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    Future<void> checkForUpdates() async {
+      await ref.read(updateProvider.notifier).checkNow();
+      if (!context.mounted) return;
+      final state = ref.read(updateProvider).value;
+      if (state == null) return;
+      switch (state.status) {
+        case UpdateStatus.available:
+          if (state.info != null) showUpdateDialog(state.info!);
+        case UpdateStatus.upToDate:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('You’re on the latest version')),
+          );
+        case UpdateStatus.error:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Couldn’t check for updates'),
+              action: SnackBarAction(
+                label: 'Retry',
+                onPressed: () => checkForUpdates(),
+              ),
+            ),
+          );
+        case UpdateStatus.checking:
+        case UpdateStatus.idle:
+          break;
+      }
+    }
+
+    Widget updatesCard() => Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: Icon(
+              Icons.system_update_outlined,
+              color: scheme.onSurfaceVariant,
+            ),
+            title: const Text('Software update'),
+            subtitle: Text(updateSubtitle()),
+            trailing: updateState.status == UpdateStatus.available
+                ? const Icon(Icons.chevron_right)
+                : null,
+            onTap:
+                updateState.status == UpdateStatus.available &&
+                    updateState.info != null
+                ? () => showUpdateDialog(updateState.info!)
+                : null,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              children: [
+                if (updateState.status == UpdateStatus.checking)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: WiLoadingIndicator(size: 24),
+                  )
+                else
+                  FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      textStyle: context.emphasizedText.labelLarge,
+                    ),
+                    onPressed: checkForUpdates,
+                    icon: const Icon(Icons.refresh, size: 20),
+                    label: Text(
+                      'Check now',
+                      style: context.emphasizedText.labelLarge,
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                if (updateState.status == UpdateStatus.available &&
+                    updateState.info != null)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      textStyle: context.emphasizedText.labelLarge,
+                    ),
+                    onPressed: () => openDownload(updateState.info!),
+                    icon: const Icon(Icons.download, size: 20),
+                    label: Text(
+                      updateState.info!.downloadLabel,
+                      style: context.emphasizedText.labelLarge,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Divider(indent: 16, endIndent: 16, color: scheme.outlineVariant),
+          SwitchListTile(
+            title: const Text('Check on startup'),
+            subtitle: const Text('Contacts GitHub for new releases'),
+            value: settings.autoUpdateCheck,
+            onChanged: (value) =>
+                update((s) => s.copyWith(autoUpdateCheck: value)),
+          ),
+        ],
+      ),
+    );
 
     final view = ListView(
       key: const PageStorageKey<String>('settings'),
@@ -63,6 +270,8 @@ class SettingsScreen extends ConsumerWidget {
             ],
           ),
         ),
+        _section('Updates', text),
+        updatesCard(),
         _section('Appearance', text),
         Card(
           child: Padding(
@@ -180,7 +389,7 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Wishare 0.2.0 · local network only',
+          'Wishare ${WiVersion.current} · local network only',
           style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),

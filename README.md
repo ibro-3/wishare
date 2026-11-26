@@ -7,10 +7,15 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.2.0)
+## Current status (v0.3.0)
 
 Implemented:
 
+- Update manager: checks the latest stable GitHub release once on startup
+  (cached for 15 minutes, opt-out via Settings) and on demand. A small badge
+  on the Settings icon marks an available update; the Updates card in Settings
+  shows version, release notes and a Download button for the current platform,
+  falling back to the release page when no matching asset exists.
 - M3 Expressive theme layer: exact radius scale, emphasized type built from
   published tokens, colour-role mapping, dynamic colour with static baseline
   fallback, contrast levels, and spring values mapped to Flutter's
@@ -56,18 +61,20 @@ flutter build linux --release
 # flutter build windows --release  (Windows host required)
 ```
 
-Publishing a GitHub release (v0.2.0):
+Publishing a GitHub release (v0.3.0):
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
 
 `.github/workflows/release.yml` builds Windows, Linux and Android in parallel,
-then attaches `wishare-0.2.0-windows-x64.zip`, `wishare-0.2.0-linux-x64.zip`,
-`wishare-0.2.0-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
+then attaches `wishare-0.3.0-windows-x64.zip`, `wishare-0.3.0-linux-x64.zip`,
+`wishare-0.3.0-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
 release. The workflow can also be started manually with `workflow_dispatch` and
-a tag name. `dist/` holds the older local assets; v0.2.0 assets are produced by
-CI when the tag is pushed.
+a tag name. `dist/` holds the older local assets; v0.3.0 assets are produced by
+CI when the tag is pushed. The update manager reads these releases through
+`https://api.github.com/repos/ibro-3/wishare/releases/latest`; keep asset names
+in the `wishare-<version>-<platform>.<ext>` form so the platform picker works.
 
 Tests and CI:
 
@@ -89,7 +96,8 @@ lib/core/theme      design tokens (colour, type, shape, motion)
 lib/core/crypto     certificate generation, fingerprints, IDs
 lib/core/network    discovery, pairing payload, server, client, transfer driver
 lib/core/storage    repository-shaped persistence
-lib/core/state      Riverpod controllers for settings, peers, transfers, network
+lib/core/state      Riverpod controllers for settings, peers, transfers, network, updates
+lib/core/update     GitHub Releases client and platform asset selection
 lib/features        Devices, pairing, send, receive, transfers, settings UI
 ```
 
@@ -146,6 +154,14 @@ lib/features        Devices, pairing, send, receive, transfers, settings UI
 - **Flutter gaps:** emphasized type, motion physics and contrast levels have no
   Flutter library support; they are implemented from published token values and
   labelled as design decisions in code and in the plan file.
+- **Update manager:** from M3 — a small 6dp / 3dp-radius badge marks the
+  unread "update available" state; "Check now" and Download use emphasized
+  `label large` (primary actions), icons are 20dp, dialogs use 28dp corners,
+  and the check indicator uses the loading indicator at 24dp (inside M3's
+  24–240dp flexible range). My design decisions (not in M3): GitHub Releases
+  as the source, a 10s timeout, a 15-minute passive cache, opening downloads
+  in a browser instead of installing in-app, and a 240dp cap on release notes.
+  The passive check never shows a dialog and no third hero moment was added.
 
 See the token tests (`test/theme_test.dart`, `test/widget_test.dart`) which
 assert the published values rather than approximations.
