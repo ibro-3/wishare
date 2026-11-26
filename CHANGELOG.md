@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — per-ABI Android builds
+
+- Release workflow now builds and attaches split APKs for `arm64-v8a`,
+  `armeabi-v7a` and `x86_64`, alongside the universal APK.
+
 ## Unreleased — navigation redesign
 
 - Two primary tabs, Send and Receive, replace the bottom navigation bar and
@@ -36,7 +41,9 @@ Assets published by the release workflow
 
 - `wishare-0.1.0-windows-x64.zip` — Windows release bundle (executable + data)
 - `wishare-0.1.0-linux-x64.zip` — Linux release bundle
-- `wishare-0.1.0-android.apk` — Android release APK
+- `wishare-0.1.0-android.apk` — universal Android release APK
+- `wishare-0.1.0-android-arm64-v8a.apk`, `-armeabi-v7a.apk`, `-x86_64.apk` —
+  per-ABI Android release APKs
 - `SHA256SUMS.txt` — checksums for all assets
 
 Notes

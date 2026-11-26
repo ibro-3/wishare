@@ -73,8 +73,13 @@ jobs:
           if-no-files-found: error
 
   android:
-    name: Android APK
+    name: Android APKs
     runs-on: ubuntu-latest
+    env:
+      WISHARE_STORE_PASSWORD: wishare123
+      WISHARE_KEY_ALIAS: wishare
+      WISHARE_KEY_PASSWORD: wishare123
+      WISHARE_KEYSTORE_PATH: ${{ github.workspace }}/wishare-ci.jks
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -93,17 +98,18 @@ jobs:
             -storepass wishare123 -keypass wishare123 \
             -alias wishare -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Wishare CI, OU=Wishare, O=Wishare, L=NA, ST=NA, C=US"
-      - name: Build release APK
+      - name: Build universal release APK
         run: flutter build apk --release
-        env:
-          WISHARE_KEYSTORE_PATH: ${{ github.workspace }}/wishare-ci.jks
-          WISHARE_STORE_PASSWORD: wishare123
-          WISHARE_KEY_ALIAS: wishare
-          WISHARE_KEY_PASSWORD: wishare123
-      - name: Rename APK
+      - name: Build split APKs per ABI
+        run: flutter build apk --release --split-per-abi
+      - name: Rename APKs
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk \
             "wishare-$VERSION-android.apk"
+          for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
+            abi=$(basename "$apk" | sed 's/^app-//; s/-release\.apk$//')
+            cp "$apk" "wishare-$VERSION-android-$abi.apk"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: android
@@ -129,4 +135,5 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: Wishare v${{ env.VERSION }}
           generate_release_notes: true
+          overwrite_files: true
           files: dist/*
