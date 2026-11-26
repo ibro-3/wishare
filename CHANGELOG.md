@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.2 — navigation and reachability
+
+- History and Settings moved to the app bar's trailing edge; pairing moved
+  out of the app bar into an extended FAB labelled "Pair" at the bottom
+  trailing corner.
+- Send and Receive moved from the top tab bar to a bottom navigation bar so
+  both destinations stay within thumb reach.
+- Fixed an inherited-widget error on first mount: Send and Scan now receive
+  their route parameters through constructors instead of calling
+  `GoRouterState.of(context)` from `initState`.
+- The Send tab no longer has a separate Send button: paired devices are listed
+  and tapping one sends the selected files or folders.
+
 ## v0.1.1 — bug fixes and cleanup
 
 Interface

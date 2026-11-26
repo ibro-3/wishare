@@ -26,10 +26,10 @@ void main() {
       identity: identity,
       downloadDirectory: '${temp.path}${Platform.pathSeparator}downloads',
     );
-    final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    port = probe.port;
-    await probe.close();
-    await server.start(port: port);
+    // Let the server choose the port atomically: a probe-then-rebind races
+    // with other test isolates and caused intermittent "address in use".
+    await server.start(port: 0);
+    port = server.port;
   });
 
   tearDown(() async {
@@ -38,7 +38,7 @@ void main() {
   });
 
   HttpClient makeClient() => HttpClient()
-    ..connectionTimeout = const Duration(seconds: 5)
+    ..connectionTimeout = WiProtocol.requestTimeout
     ..badCertificateCallback = (_, _, _) => true;
 
   Future<({int status, Map<String, dynamic> body})> post(

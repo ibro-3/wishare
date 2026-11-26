@@ -12,12 +12,15 @@ import '../../core/network/transfer_coordinator.dart';
 import '../../core/network/wishare_client.dart';
 import '../../core/platform/share_intent.dart';
 import '../../core/state/providers.dart';
-import '../../core/theme/wishare_type.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets/directional_icon.dart';
 
 class SendScreen extends ConsumerStatefulWidget {
-  const SendScreen({super.key});
+  // The router passes this in; looking up GoRouterState.of(context) from
+  // initState is illegal (it depends on the modal scope before mount).
+  const SendScreen({this.peerId, super.key});
+
+  final String? peerId;
 
   @override
   ConsumerState<SendScreen> createState() => _SendScreenState();
@@ -25,7 +28,6 @@ class SendScreen extends ConsumerStatefulWidget {
 
 class _SendScreenState extends ConsumerState<SendScreen> {
   final _selected = <SelectedEntry>[];
-  Peer? _peer;
   String? _requestedPeerId;
   bool _busy = false;
   double _progress = 0;
@@ -37,7 +39,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     super.initState();
     // peersProvider is usually still AsyncLoading here, so only remember the
     // requested id and resolve it against the paired list in build().
-    _requestedPeerId = GoRouterState.of(context).uri.queryParameters['peerId'];
+    _requestedPeerId = widget.peerId;
     for (final path in ShareIntents.takePending()) {
       if (!File(path).existsSync()) continue;
       _selected.add(
@@ -53,32 +55,22 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   Widget build(BuildContext context) {
     final peers = ref.watch(peersProvider).value ?? const <Peer>[];
-    final paired = peers.where((peer) => peer.isPaired).toList();
-    // Resolve the effective peer now that peers are available. An unknown or
-    // unpaired peerId from the query string is ignored in favour of the first
-    // paired device.
-    if (paired.isEmpty) {
-      _peer = null;
-    } else if (_peer == null || !paired.contains(_peer)) {
-      Peer? requested;
-      final peerId = _requestedPeerId;
-      if (peerId != null) {
-        for (final peer in paired) {
-          if (peer.id == peerId) {
-            requested = peer;
-            break;
-          }
-        }
-      }
-      _peer = requested ?? paired.first;
-    }
+    // A device the caller asked for (for example via a share shortcut) is
+    // listed first; every paired device is tappable to send the selection.
+    final paired = peers.where((peer) => peer.isPaired).toList()
+      ..sort(
+        (a, b) => (a.id == _requestedPeerId ? 0 : 1).compareTo(
+          b.id == _requestedPeerId ? 0 : 1,
+        ),
+      );
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final total = _selected.fold<int>(0, (sum, entry) => sum + entry.size);
 
     final nearby = peers.where((peer) => !peer.isPaired).toList();
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      // Leave room for the navigation bar and the pairing FAB above it.
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -95,15 +87,21 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               ),
             )
           else
-            DropdownButtonFormField<Peer>(
-              initialValue: _peer,
-              decoration: const InputDecoration(labelText: 'Device'),
-              items: [
-                for (final peer in paired)
-                  DropdownMenuItem(value: peer, child: Text(peer.name)),
-              ],
-              onChanged: (peer) => setState(() => _peer = peer),
-            ),
+            for (final peer in paired)
+              Card(
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: scheme.primaryContainer,
+                    foregroundColor: scheme.onPrimaryContainer,
+                    child: const Icon(Icons.devices_other),
+                  ),
+                  title: Text(peer.name, style: text.titleMedium),
+                  subtitle: Text(peer.endpoint, style: text.bodySmall),
+                  // Tapping the device is the send action: no separate button.
+                  trailing: const WiDirectionalIcon(Icons.send),
+                  onTap: _busy ? null : () => _choose(peer),
+                ),
+              ),
           if (nearby.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text('Nearby devices', style: text.titleSmall),
@@ -215,18 +213,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             const SizedBox(height: 16),
             Text(_error!, style: text.bodySmall?.copyWith(color: scheme.error)),
           ],
-          const SizedBox(height: 32),
-          FilledButton.icon(
-            onPressed: _busy || _peer == null || _selected.isEmpty
-                ? null
-                : _send,
-            // Emphasized type is the exception: primary action only.
-            style: FilledButton.styleFrom(
-              textStyle: context.emphasizedText.labelLarge,
+          if (_selected.isNotEmpty && !_busy) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Tap a device above to send these items',
+              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
             ),
-            icon: const WiDirectionalIcon(Icons.send),
-            label: Text(_busy ? 'Sending…' : 'Send'),
-          ),
+          ],
         ],
       ),
     );
@@ -266,7 +260,17 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     }
   }
 
-  Future<void> _send() async {
+  void _choose(Peer peer) {
+    if (_selected.isEmpty) {
+      setState(
+        () => _error = 'Choose files or a folder first, then tap a device.',
+      );
+      return;
+    }
+    _send(peer);
+  }
+
+  Future<void> _send(Peer peer) async {
     setState(() {
       _busy = true;
       _error = null;
@@ -275,7 +279,6 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     });
     Transfer? transfer;
     try {
-      final peer = _peer!;
       final identity = await ref.read(identityProvider.future);
       final settings = await ref.read(settingsProvider.future);
       final coordinator = TransferCoordinator(settings);

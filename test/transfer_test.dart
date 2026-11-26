@@ -37,10 +37,8 @@ void main() {
         downloadDirectory: downloadDir,
       );
       final pin = server.generatePin();
-      final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      final testPort = probe.port;
-      await probe.close();
-      await server.start(port: testPort);
+      await server.start(port: 0);
+      final testPort = server.port;
       addTearDown(() async {
         await server.dispose();
         temp.deleteSync(recursive: true);
@@ -104,10 +102,8 @@ void main() {
         downloadDirectory: downloadDir,
       );
       final pin = server.generatePin();
-      final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      final testPort = probe.port;
-      await probe.close();
-      await server.start(port: testPort);
+      await server.start(port: 0);
+      final testPort = server.port;
       addTearDown(() async {
         await server.dispose();
         temp.deleteSync(recursive: true);
@@ -168,10 +164,8 @@ void main() {
       downloadDirectory: downloadDir,
     );
     final pin = server.generatePin();
-    final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final testPort = probe.port;
-    await probe.close();
-    await server.start(port: testPort);
+    await server.start(port: 0);
+    final testPort = server.port;
     addTearDown(() async {
       await server.dispose();
       temp.deleteSync(recursive: true);
@@ -252,10 +246,8 @@ void main() {
       downloadDirectory: downloadDir,
     );
     final pin = server.generatePin();
-    final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    final testPort = probe.port;
-    await probe.close();
-    await server.start(port: testPort);
+    await server.start(port: 0);
+    final testPort = server.port;
     addTearDown(() async {
       await server.dispose();
       temp.deleteSync(recursive: true);

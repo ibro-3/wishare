@@ -21,7 +21,7 @@ Flutter build needs the Flutter SDK as an additional module.
 Use `fpm` (or equivalent) over `build/linux/x64/release/bundle`:
 
 ```bash
-fpm -s dir -t deb -n wishare -v 0.1.1 \
+fpm -s dir -t deb -n wishare -v 0.1.2 \
   --prefix /opt/wishare \
   -C build/linux/x64/release/bundle . \
   --desktop-entry packaging/wishare.desktop

@@ -25,7 +25,10 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/send',
-          pageBuilder: (context, state) => _fadePage(const SendScreen(), state),
+          pageBuilder: (context, state) => _fadePage(
+            SendScreen(peerId: state.uri.queryParameters['peerId']),
+            state,
+          ),
         ),
         GoRoute(
           path: '/receive',
@@ -54,7 +57,13 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/scan',
-      pageBuilder: (context, state) => _fadePage(const ScanScreen(), state),
+      pageBuilder: (context, state) => _fadePage(
+        ScanScreen(
+          host: state.uri.queryParameters['host'],
+          port: state.uri.queryParameters['port'],
+        ),
+        state,
+      ),
     ),
   ],
 );
@@ -169,80 +178,78 @@ class _AppShellState extends ConsumerState<AppShell> {
 
     final shell = Scaffold(
       appBar: AppBar(
-        // Two leading icon buttons need more than the default 56dp slot.
-        leadingWidth: 112,
-        // My design decision: History sits immediately left of Settings in
-        // the leading area; M3 normally uses one leading menu/back button.
-        leading: Row(
-          children: [
-            IconButton(
-              tooltip: 'Transfer history',
-              icon: const Icon(Icons.history),
-              onPressed: () => context.go('/history'),
-            ),
-            IconButton(
-              tooltip: 'Settings',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => context.go('/settings'),
-            ),
-          ],
-        ),
+        // M3 app bars carry up to two trailing icon buttons; the primary
+        // pairing action lives in the extended FAB instead of the bar.
         title: Text(_title, style: Theme.of(context).textTheme.titleLarge),
         actions: [
           IconButton(
-            tooltip: 'Pair a device',
-            icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () => context.go('/scan'),
+            tooltip: 'Transfer history',
+            icon: const Icon(Icons.history),
+            onPressed: () => context.go('/history'),
+          ),
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => context.go('/settings'),
           ),
         ],
-        bottom: TabBar(
-          tabs: [
-            const Tab(text: 'Send'),
-            if (pendingCount > 0)
-              Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Receive'),
-                    const SizedBox(width: 4),
-                    Badge(
-                      label: Text(pendingCount > 9 ? '9+' : '$pendingCount'),
-                    ),
-                  ],
-                ),
-              )
-            else
-              const Tab(text: 'Receive'),
-          ],
-          onTap: (index) => context.go(index == 0 ? '/send' : '/receive'),
-        ),
+      ),
+      // From M3: navigation belongs at the bottom for reachability. Two
+      // destinations is a deliberate deviation from the 3–5 nav bar guidance.
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (index) =>
+            context.go(index == 0 ? '/send' : '/receive'),
+        destinations: [
+          NavigationDestination(
+            icon: const Icon(Icons.send_outlined),
+            selectedIcon: const Icon(Icons.send),
+            label: 'Send',
+          ),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: pendingCount > 0,
+              label: Text(pendingCount > 9 ? '9+' : '$pendingCount'),
+              child: const Icon(Icons.inbox_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: pendingCount > 0,
+              label: Text(pendingCount > 9 ? '9+' : '$pendingCount'),
+              child: const Icon(Icons.inbox),
+            ),
+            label: 'Receive',
+          ),
+        ],
       ),
       body: SafeArea(child: widget.child),
+      // From M3: use an extended FAB when the icon alone is ambiguous. The
+      // label makes pairing discoverable; title medium is the small extended
+      // FAB's type style. Anchored bottom-trailing, mirrored in RTL.
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'wishare-pair-fab',
+        onPressed: () => context.go('/scan'),
+        icon: const Icon(Icons.qr_code_scanner),
+        label: const Text('Pair'),
+        extendedTextStyle: Theme.of(context).textTheme.titleMedium,
+      ),
     );
 
-    return DefaultTabController(
-      // A new key rebuilds the controller when the route changes, keeping the
-      // tab bar in sync with go_router without a second source of truth.
-      key: ValueKey(_index),
-      length: 2,
-      initialIndex: _index,
-      child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
-              context.go('/send'),
-          const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
-              context.go('/send'),
-          const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
-              context.go('/send'),
-          const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
-              context.go('/receive'),
-          const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
-              context.go('/history'),
-          const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
-              context.go('/settings'),
-        },
-        child: shell,
-      ),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+            context.go('/send'),
+        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): () =>
+            context.go('/send'),
+        const SingleActivator(LogicalKeyboardKey.digit1, control: true): () =>
+            context.go('/send'),
+        const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
+            context.go('/receive'),
+        const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
+            context.go('/history'),
+        const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
+            context.go('/settings'),
+      },
+      child: shell,
     );
   }
 

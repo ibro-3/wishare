@@ -85,6 +85,9 @@ class WishareServer {
   String? get pin => _pin;
   bool get isRunning => _server != null;
 
+  /// The bound port; useful after `start(port: 0)` in tests.
+  int get port => _server?.port ?? WiProtocol.port;
+
   String generatePin() {
     _pin = newPin();
     return _pin!;

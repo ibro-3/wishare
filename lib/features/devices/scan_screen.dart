@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -8,7 +7,12 @@ import '../../core/network/wishare_client.dart';
 import '../../core/state/providers.dart';
 
 class ScanScreen extends ConsumerStatefulWidget {
-  const ScanScreen({super.key});
+  // Route parameters are passed in rather than looked up in initState:
+  // GoRouterState.of(context) depends on the modal scope before mount.
+  const ScanScreen({this.host, this.port, super.key});
+
+  final String? host;
+  final String? port;
 
   @override
   ConsumerState<ScanScreen> createState() => _ScanScreenState();
@@ -35,9 +39,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   @override
   void initState() {
     super.initState();
-    final query = GoRouterState.of(context).uri.queryParameters;
-    _host.text = query['host'] ?? '';
-    _port.text = query['port'] ?? '${WiProtocol.port}';
+    _host.text = widget.host ?? '';
+    _port.text = widget.port ?? '${WiProtocol.port}';
     _manual = _host.text.isNotEmpty;
   }
 
