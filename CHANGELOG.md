@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.3.2 — Android update downloads
+
+- On Android, update APKs are enqueued in the system DownloadManager instead of
+  opening a browser. The download continues in the background, posts a
+  completion notification and appears in the Downloads app. A snackbar confirms
+  the download started. Desktop keeps the browser path; release-page fallbacks
+  are unchanged.
+- File names passed to DownloadManager are reduced to a safe basename so query
+  strings and path segments cannot escape the Downloads directory.
+
 ## v0.3.1 — pairing without a QR code
 
 - Fixed the pairing dead end: the screen that generates the QR code had no

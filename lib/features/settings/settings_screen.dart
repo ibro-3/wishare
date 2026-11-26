@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/settings.dart';
 import '../../core/network/protocol.dart';
+import '../../core/platform/android_downloads.dart';
 import '../../core/state/providers.dart';
 import '../../core/state/update_provider.dart';
 import '../../core/theme/wishare_theme.dart';
@@ -63,6 +64,27 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     Future<void> openDownload(UpdateInfo info) async {
+      // From M3: a snackbar reports a process the app has performed without
+      // interrupting the user. On Android the APK goes to DownloadManager; a
+      // release-page fallback still opens in the browser.
+      if (AndroidDownloads.isSupported && info.asset != null) {
+        final id = await AndroidDownloads.enqueue(
+          url: info.downloadUrl,
+          fileName: info.asset!.name,
+          title: 'Wishare ${info.version}',
+        );
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              id == null
+                  ? 'Couldn’t start the download'
+                  : 'Downloading ${info.version} · see your Downloads',
+            ),
+          ),
+        );
+        return;
+      }
       final uri = Uri.tryParse(info.downloadUrl);
       if (uri == null) {
         ScaffoldMessenger.of(context).showSnackBar(
