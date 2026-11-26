@@ -12,8 +12,11 @@ import '../../core/network/transfer_coordinator.dart';
 import '../../core/network/wishare_client.dart';
 import '../../core/platform/share_intent.dart';
 import '../../core/state/providers.dart';
+import '../../core/theme/wishare_motion.dart';
+import '../../core/theme/wishare_theme.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets/directional_icon.dart';
+import '../../shared/widgets/spring_reveal.dart';
 
 class SendScreen extends ConsumerStatefulWidget {
   // The router passes this in; looking up GoRouterState.of(context) from
@@ -29,6 +32,7 @@ class SendScreen extends ConsumerStatefulWidget {
 class _SendScreenState extends ConsumerState<SendScreen> {
   final _selected = <SelectedEntry>[];
   String? _requestedPeerId;
+  String? _celebratedPeerId;
   bool _busy = false;
   double _progress = 0;
   String? _error;
@@ -73,8 +77,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final total = _selected.fold<int>(0, (sum, entry) => sum + entry.size);
+    // Hero moment (the second of two): the first peer that appears. Once per
+    // session, keyed by peer id; disabled under reduced motion.
+    _celebratedPeerId ??= devices.isEmpty ? null : devices.first.id;
+    final reduceMotion = context.wiReduceMotion;
 
     return SingleChildScrollView(
+      key: const PageStorageKey<String>('send'),
       // Leave room for the navigation bar and the pairing FAB above it.
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
       child: Column(
@@ -191,33 +200,54 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             )
           else
             for (final peer in devices)
-              Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: peer.isPaired
-                        ? scheme.primaryContainer
-                        : scheme.secondaryContainer,
-                    foregroundColor: peer.isPaired
-                        ? scheme.onPrimaryContainer
-                        : scheme.onSecondaryContainer,
-                    child: const Icon(Icons.devices_other),
-                  ),
-                  title: Text(peer.name, style: text.titleMedium),
-                  subtitle: Text(peer.endpoint, style: text.bodySmall),
-                  // Paired rows send on tap; unpaired rows pair inline.
-                  trailing: peer.isPaired
-                      ? const WiDirectionalIcon(Icons.send)
-                      : OutlinedButton(
-                          onPressed: () => context.go(
-                            '/scan?host=${peer.address}&port=${peer.port}',
-                          ),
-                          child: const Text('Pair'),
-                        ),
-                  onTap: peer.isPaired && !_busy ? () => _choose(peer) : null,
-                ),
+              _deviceCard(
+                peer,
+                scheme: scheme,
+                text: text,
+                reveal: peer.id == _celebratedPeerId && !reduceMotion,
               ),
         ],
       ),
+    );
+  }
+
+  Widget _deviceCard(
+    Peer peer, {
+    required ColorScheme scheme,
+    required TextTheme text,
+    required bool reveal,
+  }) {
+    final card = Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: peer.isPaired
+              ? scheme.primaryContainer
+              : scheme.secondaryContainer,
+          foregroundColor: peer.isPaired
+              ? scheme.onPrimaryContainer
+              : scheme.onSecondaryContainer,
+          child: const Icon(Icons.devices_other),
+        ),
+        title: Text(peer.name, style: text.titleMedium),
+        subtitle: Text(peer.endpoint, style: text.bodySmall),
+        // Paired rows send on tap; unpaired rows pair inline.
+        trailing: peer.isPaired
+            ? const WiDirectionalIcon(Icons.send)
+            : OutlinedButton(
+                onPressed: () => context.push(
+                  '/scan?host=${peer.address}&port=${peer.port}',
+                ),
+                child: const Text('Pair'),
+              ),
+        onTap: peer.isPaired && !_busy ? () => _choose(peer) : null,
+      ),
+    );
+    if (!reveal) return card;
+    return WiSpringReveal(
+      key: ValueKey<String>('peer-reveal-${peer.id}'),
+      spatial: WiSpring.fastSpatial,
+      effects: WiSpring.fastEffects,
+      child: card,
     );
   }
 

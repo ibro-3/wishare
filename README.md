@@ -7,7 +7,7 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.1.3)
+## Current status (v0.2.0)
 
 Implemented:
 
@@ -15,12 +15,13 @@ Implemented:
   published tokens, colour-role mapping, dynamic colour with static baseline
   fallback, contrast levels, and spring values mapped to Flutter's
   `SpringSimulation`.
-- Adaptive shell: Send and Receive in a bottom navigation bar on every screen
-  size, with History and Settings in the app bar's trailing edge and pairing
-  in an extended FAB above the bar. Send to lists every known device with
-  paired ones on top: pick files or a folder and tap a paired device to send,
-  or use the inline Pair button for nearby devices. Bottom sheets on phones,
-  dialogs on desktop.
+- Shell: Send and Receive in a bottom navigation bar, with History and Settings
+  in the app bar's trailing edge and pairing in an extended FAB above the bar.
+  History, Settings, Pair and Scan are pushed pages, so back returns to the
+  previous tab; tab scroll positions are preserved. Send to lists every known
+  device with paired ones on top: pick files or a folder and tap a paired
+  device to send, or use the inline Pair button for nearby devices. Bottom
+  sheets on phones, dialogs on desktop.
 - Device discovery via a DNS-SD mDNS responder (`_wishare._tcp.local`) plus a
   UDP broadcast heartbeat, with manual IP/QR fallback.
 - Self-signed P-256 certificate generation and TOFU fingerprint pinning.
@@ -31,7 +32,7 @@ Implemented:
   intent intake; desktop window setup with a tray icon and menu.
 - Persistent peers, transfers and settings via `shared_preferences` + JSON.
 
-Still out of scope for v0.1:
+Still out of scope:
 
 - Packaged installers/signing (release CI attaches zips and APKs; MSIX and deb
   packaging templates live in `packaging/`).
@@ -55,17 +56,17 @@ flutter build linux --release
 # flutter build windows --release  (Windows host required)
 ```
 
-Publishing a GitHub release (v0.1.3):
+Publishing a GitHub release (v0.2.0):
 
 ```bash
-git tag v0.1.3 && git push origin v0.1.3
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 `.github/workflows/release.yml` builds Windows, Linux and Android in parallel,
-then attaches `wishare-0.1.3-windows-x64.zip`, `wishare-0.1.3-linux-x64.zip`,
-`wishare-0.1.3-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
+then attaches `wishare-0.2.0-windows-x64.zip`, `wishare-0.2.0-linux-x64.zip`,
+`wishare-0.2.0-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
 release. The workflow can also be started manually with `workflow_dispatch` and
-a tag name. `dist/` holds the older local assets; v0.1.3 assets are produced by
+a tag name. `dist/` holds the older local assets; v0.2.0 assets are produced by
 CI when the tag is pushed.
 
 Tests and CI:
@@ -124,12 +125,16 @@ lib/features        Devices, pairing, send, receive, transfers, settings UI
   `SpringSimulation` (Flutter has no motion physics library — my design
   decision). Spatial springs drive geometry; effects springs (damping 1.0)
   drive opacity and never overshoot. There are exactly **two hero moments**:
-  the first peer appearing, and the first completed transfer. No stagger or
-  choreography timings are invented.
-- **Transitions and RTL:** top-level destinations use the M3 top-level pattern
-  (quick fade, emphasized decelerate on enter / accelerate on exit, legacy
-  duration tokens because M3 transitions still use them). Directional icons
-  such as Send mirror in RTL; non-directional icons never do.
+  the first peer appearing in Send, and the first completed transfer. No
+  stagger or choreography timings are invented.
+- **Transitions and RTL:** top-level destinations use the M3 top-level quick
+  fade with the published legacy tokens — 400ms emphasized decelerate on
+  enter, 200ms emphasized accelerate on exit. The incoming screen fades in
+  only after the outgoing one has gone (my design decision to avoid Flutter's
+  cross-fade); pushed pages use the platform's forward/backward default. Under
+  reduced motion a subtle 100ms fade replaces hard cuts, while spring reveals
+  and shape morphing stay disabled. Directional icons such as Send mirror in
+  RTL; non-directional icons never do.
 - **Golden tests:** `test/golden_test.dart` snapshots the theme showcase in
   light, dark and high contrast. Regenerate with
   `flutter test --update-goldens test/golden_test.dart`.

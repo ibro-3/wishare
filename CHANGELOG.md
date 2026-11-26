@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.2.0 — navigation and motion
+
+- History and Settings are now pushed above the shell instead of replacing it;
+  the system/AppBar back button returns to the Send or Receive tab you came
+  from. Pairing and scanning use the same push/pop flow, including the inline
+  Pair action on a nearby device.
+- History now has its own app bar (it had none), Settings owns its scaffold,
+  and both tabs keep their scroll position when switching destinations.
+- Top-level tab changes use the M3 quick-fade tokens: 400ms emphasized
+  decelerate on enter, 200ms emphasized accelerate on exit, with the incoming
+  screen fading in only after the outgoing one has gone (no cross-fade).
+  Pushed pages use the platform's forward/backward default transition.
+- Reduced motion now uses a subtle 100ms fade instead of a hard cut; spring
+  reveals and the morphing loading indicator stay disabled.
+- Added the second hero moment: the first peer appearing in the Send device
+  list, animated once per session with the fast spatial/effects springs.
+- Full-page loading states consistently use the M3 loading indicator.
+- Keyboard shortcut `Ctrl/⌘+4` opens Settings; `3` opens History.
+
 ## v0.1.3 — single device list
 
 - Send to is now the single device list: paired devices stay on top and send

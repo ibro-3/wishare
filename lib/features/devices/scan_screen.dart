@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -266,7 +267,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       await ref.read(networkProvider.notifier).pairWith(payload);
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
-      Navigator.pop(context);
+      context.pop();
       messenger.showSnackBar(
         const SnackBar(content: Text('Device paired successfully')),
       );

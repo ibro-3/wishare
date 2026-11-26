@@ -57,6 +57,7 @@ class ReceiveScreen extends ConsumerWidget {
     final text = Theme.of(context).textTheme;
 
     return ListView(
+      key: const PageStorageKey<String>('receive'),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
       children: [
         if (pending.isNotEmpty) ...[

@@ -8,6 +8,7 @@ import '../../core/models/settings.dart';
 import '../../core/network/protocol.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/wishare_theme.dart';
+import '../../shared/widgets/loading_indicator.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -20,7 +21,11 @@ class SettingsScreen extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     if (settings == null) {
-      return const Center(child: CircularProgressIndicator());
+      // Keep the app bar (and its back button) while settings load.
+      return Scaffold(
+        appBar: AppBar(title: const Text('Settings')),
+        body: const Center(child: WiLoadingIndicator()),
+      );
     }
 
     final identity = identityAsync.value;
@@ -34,7 +39,8 @@ class SettingsScreen extends ConsumerWidget {
       await ref.read(networkProvider.notifier).applySettings(next);
     }
 
-    return ListView(
+    final view = ListView(
+      key: const PageStorageKey<String>('settings'),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
       children: [
         _section('This device', text),
@@ -174,11 +180,16 @@ class SettingsScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Wishare 0.1.3 · local network only',
+          'Wishare 0.2.0 · local network only',
           style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
       ],
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: SafeArea(child: view),
     );
   }
 

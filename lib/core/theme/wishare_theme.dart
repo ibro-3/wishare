@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
+import 'wishare_motion.dart';
 import 'wishare_shape.dart';
 import 'wishare_type.dart';
 
@@ -96,12 +97,15 @@ abstract final class WishareTheme {
       // M3 interactive targets stay 48dp even when the visual button is 40dp.
       materialTapTargetSize: MaterialTapTargetSize.padded,
       splashFactory: InkSparkle.splashFactory,
+      // From M3: forward and backward navigation uses platform defaults;
+      // a single fade-forwards builder is my design decision for consistent
+      // motion across Android, Linux and Windows.
       pageTransitionsTheme: PageTransitionsTheme(
         builders: {
           for (final platform in TargetPlatform.values)
             platform: reduceMotion
-                ? const NoTransitionBuilder()
-                : const ZoomPageTransitionsBuilder(),
+                ? const WiSubtleFadePageTransitionsBuilder()
+                : const FadeForwardsPageTransitionsBuilder(),
         },
       ),
       extensions: [
@@ -223,6 +227,12 @@ class WiMotionExtension extends ThemeExtension<WiMotionExtension> {
   }
 }
 
+/// Convenience access to the motion theme extension from any widget.
+extension WiMotionContext on BuildContext {
+  bool get wiReduceMotion =>
+      Theme.of(this).extension<WiMotionExtension>()?.reduceMotion ?? false;
+}
+
 class WiContrastExtension extends ThemeExtension<WiContrastExtension> {
   const WiContrastExtension(this.level);
 
@@ -239,8 +249,14 @@ class WiContrastExtension extends ThemeExtension<WiContrastExtension> {
   }
 }
 
-class NoTransitionBuilder extends PageTransitionsBuilder {
-  const NoTransitionBuilder();
+/// From M3: under reduced motion, prefer subtle fades over sliding or scaling
+/// and disable decorative effects. The 100ms `short2` duration is published;
+/// applying it as a plain fade in Flutter is my design decision.
+class WiSubtleFadePageTransitionsBuilder extends PageTransitionsBuilder {
+  const WiSubtleFadePageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => WiTransition.reducedDuration;
 
   @override
   Widget buildTransitions<T>(
@@ -249,5 +265,5 @@ class NoTransitionBuilder extends PageTransitionsBuilder {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => child;
+  ) => FadeTransition(opacity: animation, child: child);
 }

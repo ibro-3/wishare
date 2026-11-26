@@ -29,8 +29,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
     selected ??= transfers.isEmpty ? null : transfers.first;
 
+    final Widget body;
     if (twoPane) {
-      return Row(
+      body = Row(
         children: [
           SizedBox(
             width: 360,
@@ -51,11 +52,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ),
         ],
       );
+    } else {
+      body = _list(context, transfers, text, scheme, ref, (transfer) {
+        _showDetailSheet(context, transfer);
+      });
     }
 
-    return _list(context, transfers, text, scheme, ref, (transfer) {
-      _showDetailSheet(context, transfer);
-    });
+    return Scaffold(
+      appBar: AppBar(title: const Text('History')),
+      body: SafeArea(child: body),
+    );
   }
 
   Widget _list(
@@ -83,6 +89,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       );
     }
     return ListView.separated(
+      key: const PageStorageKey<String>('history'),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
       itemCount: transfers.length,
       separatorBuilder: (context, index) => const SizedBox(height: 8),

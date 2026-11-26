@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme/wishare_motion.dart';
+import '../../core/theme/wishare_theme.dart';
 
 /// M3 Expressive loading indicator for short (200ms–5s) indeterminate waits.
 ///
@@ -18,13 +19,16 @@ import '../../core/theme/wishare_motion.dart';
 class WiLoadingIndicator extends StatefulWidget {
   const WiLoadingIndicator({
     this.contained = false,
-    this.reduceMotion = false,
+    this.reduceMotion,
     this.size = 48,
     super.key,
   });
 
   final bool contained;
-  final bool reduceMotion;
+
+  /// Explicit override for tests and special cases; when omitted the value
+  /// comes from the [WiMotionExtension] theme extension.
+  final bool? reduceMotion;
   final double size;
 
   @override
@@ -38,6 +42,7 @@ class _WiLoadingIndicatorState extends State<WiLoadingIndicator>
   double _t = 0;
   Duration? _segmentStart;
   late SpringSimulation _simulation;
+  late bool _reduceMotion;
 
   static const _shapes = <_Shape>[
     _Shape(exponent: 2, lobes: 0, amplitude: 0, rotation: 0), // circle
@@ -60,27 +65,44 @@ class _WiLoadingIndicatorState extends State<WiLoadingIndicator>
     _Shape(exponent: 3, lobes: 5, amplitude: 0.12, rotation: 0), // flower
   ];
 
+  bool get _resolvedReduceMotion =>
+      widget.reduceMotion ?? context.wiReduceMotion;
+
   @override
   void initState() {
     super.initState();
+    // The theme is not available until didChangeDependencies; start with the
+    // explicit value (or the default) and resolve the theme immediately after.
+    _reduceMotion = widget.reduceMotion ?? false;
     _simulation = _makeSimulation();
     _ticker = createTicker(_tick);
-    if (!widget.reduceMotion) _ticker.start();
+    if (!_reduceMotion) _ticker.start();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _applyReduceMotionIfChanged();
   }
 
   @override
   void didUpdateWidget(covariant WiLoadingIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.reduceMotion != widget.reduceMotion) {
-      _index = 0;
-      _t = 0;
-      _segmentStart = null;
-      _simulation = _makeSimulation();
-      if (widget.reduceMotion) {
-        _ticker.stop();
-      } else {
-        _ticker.start();
-      }
+    _applyReduceMotionIfChanged();
+  }
+
+  void _applyReduceMotionIfChanged() {
+    final reduced = _resolvedReduceMotion;
+    if (reduced == _reduceMotion) return;
+    _reduceMotion = reduced;
+    _index = 0;
+    _t = 0;
+    _segmentStart = null;
+    _simulation = _makeSimulation();
+    if (reduced) {
+      _ticker.stop();
+    } else {
+      _ticker.start();
     }
   }
 
@@ -113,7 +135,7 @@ class _WiLoadingIndicatorState extends State<WiLoadingIndicator>
     final active = _Shape.lerp(
       _shapes[_index],
       _shapes[(_index + 1) % _shapes.length],
-      widget.reduceMotion ? 0 : _t,
+      _reduceMotion ? 0 : _t,
     );
     // Active indicator is 38dp inside a 48dp container (M3 measurements).
     final activeSize = widget.size * (38 / 48);

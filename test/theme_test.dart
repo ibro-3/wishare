@@ -66,6 +66,32 @@ void main() {
     expect(peak(WiSpring.defaultEffects), lessThanOrEqualTo(1.0));
   });
 
+  test('top-level transition tokens match the M3 legacy system', () {
+    expect(WiTransition.enterDuration, const Duration(milliseconds: 400));
+    expect(WiTransition.exitDuration, const Duration(milliseconds: 200));
+    expect(WiTransition.reducedDuration, const Duration(milliseconds: 100));
+    expect(WiTransition.enterCurve, const Cubic(0.05, 0.7, 0.1, 1));
+    expect(WiTransition.exitCurve, const Cubic(0.3, 0, 0.8, 0.15));
+  });
+
+  test('reduced motion swaps in the subtle 100ms fade builder', () {
+    ThemeData themeFor(bool reduced) => WishareTheme.build(
+      WishareTheme.baseline(Brightness.light),
+      contrast: WiContrast.standard,
+      reduceMotion: reduced,
+    );
+
+    expect(
+      themeFor(false).pageTransitionsTheme.builders[TargetPlatform.android],
+      isA<FadeForwardsPageTransitionsBuilder>(),
+    );
+    final reduced = themeFor(true)
+        .pageTransitionsTheme
+        .builders[TargetPlatform.android]!;
+    expect(reduced, isA<WiSubtleFadePageTransitionsBuilder>());
+    expect(reduced.transitionDuration, const Duration(milliseconds: 100));
+  });
+
   test('nested radius follows inner = outer - padding', () {
     expect(WiRadius.inner(WiRadius.extraLarge, 8), 20);
   });

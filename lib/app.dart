@@ -25,7 +25,8 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/send',
-          pageBuilder: (context, state) => _fadePage(
+          pageBuilder: (context, state) => _topLevelPage(
+            context,
             SendScreen(peerId: state.uri.queryParameters['peerId']),
             state,
           ),
@@ -33,31 +34,27 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/receive',
           pageBuilder: (context, state) =>
-              _fadePage(const ReceiveScreen(), state),
+              _topLevelPage(context, const ReceiveScreen(), state),
         ),
       ],
     ),
+    // Sub-flows are pushed above the shell so system/AppBar back returns to
+    // whichever top-level destination the user came from.
     GoRoute(
       path: '/history',
-      pageBuilder: (context, state) => _fadePage(const HistoryScreen(), state),
+      pageBuilder: (context, state) => _subPage(const HistoryScreen(), state),
     ),
     GoRoute(
       path: '/settings',
-      pageBuilder: (context, state) => _fadePage(
-        Scaffold(
-          appBar: AppBar(title: const Text('Settings')),
-          body: const SettingsScreen(),
-        ),
-        state,
-      ),
+      pageBuilder: (context, state) => _subPage(const SettingsScreen(), state),
     ),
     GoRoute(
       path: '/pair',
-      pageBuilder: (context, state) => _fadePage(const PairingScreen(), state),
+      pageBuilder: (context, state) => _subPage(const PairingScreen(), state),
     ),
     GoRoute(
       path: '/scan',
-      pageBuilder: (context, state) => _fadePage(
+      pageBuilder: (context, state) => _subPage(
         ScanScreen(
           host: state.uri.queryParameters['host'],
           port: state.uri.queryParameters['port'],
@@ -68,29 +65,36 @@ final appRouter = GoRouter(
   ],
 );
 
-/// Top-level routes use the M3 "top level" quick-fade transition with legacy
-/// emphasized easing/duration tokens (transitions still use that system).
-CustomTransitionPage<void> _fadePage(Widget child, GoRouterState state) {
+/// Top-level destinations use the M3 "top level" quick fade with published
+/// legacy easing/duration tokens (transitions still use that system).
+CustomTransitionPage<void> _topLevelPage(
+  BuildContext context,
+  Widget child,
+  GoRouterState state,
+) {
+  final reduceMotion = context.wiReduceMotion;
   return CustomTransitionPage<void>(
     key: state.pageKey,
     child: child,
-    transitionDuration: const Duration(milliseconds: 250),
-    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionDuration: reduceMotion
+        ? WiTransition.reducedDuration
+        : WiTransition.enterDuration,
+    reverseTransitionDuration: reduceMotion
+        ? WiTransition.reducedDuration
+        : WiTransition.exitDuration,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      // M3 top-level quick-fade; skipped entirely for system reduce-motion.
-      if (Theme.of(context).extension<WiMotionExtension>()?.reduceMotion ??
-          false) {
-        return child;
+      if (context.wiReduceMotion) {
+        return FadeTransition(opacity: animation, child: child);
       }
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: const Cubic(0.05, 0.7, 0.1, 1),
-        reverseCurve: const Cubic(0.3, 0, 0.8, 0.15),
-      );
-      return FadeTransition(opacity: curved, child: child);
+      return WiTopLevelFade(animation: animation, child: child);
     },
   );
 }
+
+/// Pushed sub-flows use the platform's forward/backward default page route,
+/// which reads [ThemeData.pageTransitionsTheme] from the app theme.
+Page<void> _subPage(Widget child, GoRouterState state) =>
+    MaterialPage<void>(key: state.pageKey, child: child);
 
 class WishareApp extends ConsumerWidget {
   const WishareApp({super.key});
@@ -185,12 +189,12 @@ class _AppShellState extends ConsumerState<AppShell> {
           IconButton(
             tooltip: 'Transfer history',
             icon: const Icon(Icons.history),
-            onPressed: () => context.go('/history'),
+            onPressed: () => context.push('/history'),
           ),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => context.go('/settings'),
+            onPressed: () => context.push('/settings'),
           ),
         ],
       ),
@@ -227,7 +231,7 @@ class _AppShellState extends ConsumerState<AppShell> {
       // FAB's type style. Anchored bottom-trailing, mirrored in RTL.
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'wishare-pair-fab',
-        onPressed: () => context.go('/scan'),
+        onPressed: () => context.push('/scan'),
         icon: const Icon(Icons.qr_code_scanner),
         label: const Text('Pair'),
         extendedTextStyle: Theme.of(context).textTheme.titleMedium,
@@ -245,9 +249,11 @@ class _AppShellState extends ConsumerState<AppShell> {
         const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
             context.go('/receive'),
         const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
-            context.go('/history'),
+            context.push('/history'),
+        const SingleActivator(LogicalKeyboardKey.digit4, control: true): () =>
+            context.push('/settings'),
         const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
-            context.go('/settings'),
+            context.push('/settings'),
       },
       child: shell,
     );
