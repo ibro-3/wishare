@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/crypto/certificate_manager.dart';
 import '../../core/models/peer.dart';
 import '../../core/models/transfer.dart';
+import '../../core/network/protocol.dart';
 import '../../core/network/transfer_coordinator.dart';
 import '../../core/network/wishare_client.dart';
 import '../../core/platform/share_intent.dart';
@@ -35,6 +36,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   String? _requestedPeerId;
   String? _celebratedPeerId;
   bool _busy = false;
+  bool _scanning = false;
+  DateTime? _lastScan;
   double _progress = 0;
   String? _error;
   String? _status;
@@ -188,7 +191,30 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             ),
           ],
           const SizedBox(height: 24),
-          Text('Send to', style: text.titleMedium),
+          Row(
+            children: [
+              Text('Send to', style: text.titleMedium),
+              const Spacer(),
+              IconButton(
+                tooltip: 'Scan again',
+                icon: _scanning
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.radar_outlined),
+                onPressed: _scanning ? null : _scanAgain,
+              ),
+            ],
+          ),
+          if (_scanning)
+            Text('Scanning nearby devices…', style: text.bodySmall)
+          else if (_lastScan != null)
+            Text(
+              'Last scan: ${TimeOfDay.fromDateTime(_lastScan!).format(context)}',
+              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
           const SizedBox(height: 8),
           if (networkError != null && networkError.isNotEmpty)
             Card(
@@ -247,14 +273,21 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         // Paired rows send on tap; unpaired rows pair inline.
         trailing: peer.isPaired
             ? const WiDirectionalIcon(Icons.send)
+            : _pairingIds.contains(peer.id)
+            ? OutlinedButton.icon(
+                // Waiting on a human at the other end: let the sender bail out.
+                onPressed: () => _cancelPair(),
+                icon: const Icon(Icons.close, size: 16),
+                label: const Text('Cancel'),
+              )
             : OutlinedButton(
                 // No QR and no PIN: the receiver approves a request in its UI.
-                onPressed: _pairingIds.contains(peer.id)
+                // Only one request at a time, so Cancel has an unambiguous
+                // target.
+                onPressed: _pairingIds.isNotEmpty
                     ? null
                     : () => _requestPair(peer),
-                child: Text(
-                  _pairingIds.contains(peer.id) ? 'Waiting…' : 'Pair',
-                ),
+                child: const Text('Pair'),
               ),
         onTap: peer.isPaired && !_busy ? () => _choose(peer) : null,
       ),
@@ -268,15 +301,51 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     );
   }
 
+  Future<void> _scanAgain() async {
+    setState(() => _scanning = true);
+    try {
+      await ref.read(networkProvider.notifier).rescan();
+      if (!mounted) return;
+      setState(() => _lastScan = DateTime.now());
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _error = 'Scan failed: $error');
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
+  void _cancelPair() {
+    ref.read(networkProvider.notifier).cancelPairRequest();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Pairing request cancelled')));
+  }
+
   Future<void> _requestPair(Peer peer) async {
-    setState(() => _pairingIds.add(peer.id));
+    final fingerprint = peer.certificateFingerprint;
     final messenger = ScaffoldMessenger.of(context);
+    if (fingerprint == null || !isValidFingerprint(fingerprint)) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No verified fingerprint for this device. Use Pair → scan code '
+            'or enter its details manually.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => _pairingIds.add(peer.id));
     try {
       await ref.read(networkProvider.notifier).requestPairWith(peer);
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(content: Text('Paired with ${peer.name}')),
       );
+    } on PairRequestException catch (error) {
+      if (!mounted || error.status == 'cancelled') return;
+      messenger.showSnackBar(SnackBar(content: Text('Could not pair: $error')));
     } on Object catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text('Could not pair: $error')));

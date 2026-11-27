@@ -229,8 +229,30 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     );
   }
 
+  /// Manual pairing is LAN-only: reject addresses that can never belong to a
+  /// nearby device before attempting a TLS connection.
+  static bool _usableHost(String value) {
+    final parts = value.split('.');
+    if (parts.length != 4) return false;
+    final octets = <int>[];
+    for (final part in parts) {
+      if (part.isEmpty || part.length > 3) return false;
+      final octet = int.tryParse(part);
+      if (octet == null || octet < 0 || octet > 255) return false;
+      octets.add(octet);
+    }
+    if (octets.first == 0 || octets.first == 127 || octets.first >= 224) {
+      return false;
+    }
+    return !(octets[0] == 169 && octets[1] == 254);
+  }
+
   Future<void> _fetchFingerprint() async {
     setState(() => _error = null);
+    if (!_usableHost(_host.text.trim())) {
+      setState(() => _error = 'Enter the other device’s LAN IPv4 address');
+      return;
+    }
     try {
       final fingerprint = await WishareClient.fetchFingerprint(
         _host.text.trim(),
@@ -253,8 +275,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       return;
     }
     final host = _host.text.trim();
-    if (host.isEmpty) {
-      setState(() => _error = 'Enter the other device’s IP address');
+    if (!_usableHost(host)) {
+      setState(() => _error = 'Enter the other device’s LAN IPv4 address');
       return;
     }
     final port = int.tryParse(_port.text.trim());

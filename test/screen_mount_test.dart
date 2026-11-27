@@ -20,6 +20,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Send to'), findsOneWidget);
+    expect(find.byTooltip('Scan again'), findsOneWidget);
   });
 
   testWidgets('Send tab lists devices without a separate Send button', (

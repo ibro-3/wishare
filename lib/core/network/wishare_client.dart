@@ -30,9 +30,11 @@ class PairRequestException implements Exception {
   final String status;
 
   @override
-  String toString() => status == 'declined'
-      ? 'The other device declined the pairing request'
-      : 'Pairing request $status';
+  String toString() => switch (status) {
+    'declined' => 'The other device declined the pairing request',
+    'cancelled' => 'Pairing request cancelled',
+    _ => 'Pairing request $status',
+  };
 }
 
 /// HTTPS sender. A peer's certificate fingerprint is verified on every
@@ -56,6 +58,11 @@ class WishareClient {
   final String senderFingerprint;
   String senderId;
   String token;
+
+  /// Set by [cancelPairWait] so the UI can abort a long approval poll.
+  bool _pairWaitCancelled = false;
+
+  void cancelPairWait() => _pairWaitCancelled = true;
 
   Uri _uri(String path, [Map<String, String>? query]) => Uri(
     scheme: WiProtocol.scheme,
@@ -148,13 +155,30 @@ class WishareClient {
     String id, {
     Duration timeout = const Duration(minutes: 2),
   }) async {
+    _pairWaitCancelled = false;
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
-      final result = await _jsonRequest(
-        'GET',
-        '/pair-request/status',
-        query: {'id': id},
-      );
+      if (_pairWaitCancelled) {
+        throw const PairRequestException('cancelled');
+      }
+      Map<String, dynamic> result;
+      try {
+        result = await _jsonRequest(
+          'GET',
+          '/pair-request/status',
+          query: {'id': id},
+        );
+      } on PairRequestException {
+        rethrow;
+      } on Object {
+        // A dropped Wi-Fi packet or a brief server hiccup must not abort a
+        // pairing that is still waiting for a human to tap Approve.
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        continue;
+      }
+      if (_pairWaitCancelled) {
+        throw const PairRequestException('cancelled');
+      }
       switch (result['status']) {
         case 'approved':
           final returned = normaliseFingerprint(

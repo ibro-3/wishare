@@ -34,7 +34,7 @@ void main() {
     expect(response[2], 0x84); // response + authoritative
     expect((response[4] << 8) | response[5], 1); // questions
     expect((response[6] << 8) | response[7], 1); // answers
-    expect((response[10] << 8) | response[11], 3); // SRV + TXT + A
+    expect((response[10] << 8) | response[11], 4); // SRV + TXT + 2 A records
 
     final text = utf8.decode(response, allowMalformed: true);
     expect(text, contains(identity.id));
@@ -82,9 +82,12 @@ void main() {
     expect(texts.first.text, contains('port=45821'));
 
     final addresses = records.whereType<IPAddressResourceRecord>().toList();
-    expect(addresses, hasLength(1));
+    expect(addresses, hasLength(2));
     expect(addresses.first.name, instanceName);
     expect(addresses.first.address.address, '192.168.1.20');
+    // Standard DNS-SD browsers resolve the SRV target before connecting.
+    expect(addresses.last.name, '${identity.id}.local');
+    expect(addresses.last.address.address, '192.168.1.20');
   });
 
   test('ignores responses and unrelated questions', () {

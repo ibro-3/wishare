@@ -7,7 +7,7 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.4.0)
+## Current status (v0.4.1)
 
 Implemented:
 
@@ -32,8 +32,10 @@ Implemented:
   sheets on phones, dialogs on desktop.
 - Device discovery via a DNS-SD mDNS querier and responder
   (`_wishare._tcp.local`) plus a UDP broadcast heartbeat, with manual IP/QR
-  fallback. On desktop the Pair button opens manual entry directly, since the
-  camera scanner plugin has no Linux/Windows implementation.
+  fallback. Both paths are bound to the same LAN interface as the QR address,
+  and the Send tab has a **Scan again** action when nothing shows up. On
+  desktop the Pair button opens manual entry directly, since the camera scanner
+  plugin has no Linux/Windows implementation.
 - Self-signed P-256 certificate generation and TOFU fingerprint pinning.
 - Three pairing paths: QR scan, request/approve with a nearby device (no code
   at all), and manual IP/PIN/fingerprint entry. All show the certificate
@@ -81,8 +83,11 @@ Nearby devices found by mDNS/UDP appear in the **Send** tab automatically. Tap
 showing the sender's name and certificate fingerprint, with **Approve** and
 **Decline** actions. The sender waits for the answer; a session token is issued
 only after the receiver approves. No QR code and no PIN are involved. Requests
-expire after two minutes, and at most eight can be pending. This is the
-recommended path when both devices are on the same network.
+expire after two minutes, and at most eight can be pending. The sender can tap
+**Cancel** while waiting, and brief network interruptions no longer abort the
+wait. This is the recommended path when both devices are on the same network.
+A nearby device without a verifiable fingerprint cannot use this path; use the
+QR code or manual entry instead.
 
 Release builds:
 

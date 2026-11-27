@@ -128,4 +128,47 @@ void main() {
       throwsA(isA<PairRequestException>()),
     );
   });
+
+  test(
+    'approval polling retries transient 404s and cancellation stops it',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('wishare-pair-retry-');
+      final receiver = await CertificateManager.create(name: 'Receiver');
+      final sender = await CertificateManager.create(name: 'Sender');
+      final server = WishareServer(
+        identity: receiver,
+        downloadDirectory: temp.path,
+      );
+      await server.start(port: 0);
+      addTearDown(() async {
+        await server.dispose();
+        temp.deleteSync(recursive: true);
+      });
+
+      final client = WishareClient(
+        host: '127.0.0.1',
+        port: server.port,
+        expectedFingerprint: receiver.fingerprint,
+        senderId: sender.id,
+        senderFingerprint: sender.fingerprint,
+      );
+      // No request exists yet, so the first polls return 404. They must be
+      // treated as "still pending" instead of aborting the whole flow.
+      final approval = client.waitForPairApproval(sender.id);
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      final incoming = server.pairRequests.first;
+      await client.requestPair(
+        id: sender.id,
+        name: 'Sender',
+        fingerprint: sender.fingerprint,
+      );
+      final request = await incoming;
+      server.approvePairRequest(request.id);
+      expect(await approval.timeout(const Duration(seconds: 5)), isNotEmpty);
+
+      final cancelled = client.waitForPairApproval(sender.id);
+      client.cancelPairWait();
+      await expectLater(cancelled, throwsA(isA<PairRequestException>()));
+    },
+  );
 }

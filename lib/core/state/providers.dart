@@ -254,6 +254,10 @@ final networkProvider = AsyncNotifierProvider<NetworkController, NetworkState>(
 );
 
 class NetworkController extends AsyncNotifier<NetworkState> {
+  /// The sender-side client currently polling for approval, so the UI can
+  /// cancel a request that is waiting on the other device.
+  WishareClient? _pairingClient;
+
   @override
   Future<NetworkState> build() async {
     final identity = await ref.read(identityProvider.future);
@@ -277,6 +281,7 @@ class NetworkController extends AsyncNotifier<NetworkState> {
       for (final subscription in subscriptions) {
         subscription.cancel();
       }
+      _pairingClient?.cancelPairWait();
       unawaited(discovery.dispose());
       unawaited(server.dispose());
     });
@@ -376,7 +381,8 @@ class NetworkController extends AsyncNotifier<NetworkState> {
     final fingerprint = peer.certificateFingerprint;
     if (fingerprint == null || !isValidFingerprint(fingerprint)) {
       throw const FormatException(
-        'This device has no verified certificate fingerprint yet',
+        'This device did not publish a verifiable certificate fingerprint. '
+        'Use the QR code or manual pairing instead.',
       );
     }
     final identity = await ref.read(identityProvider.future);
@@ -388,23 +394,37 @@ class NetworkController extends AsyncNotifier<NetworkState> {
       senderId: identity.id,
       senderFingerprint: identity.fingerprint,
     );
-    await client.requestPair(
-      id: identity.id,
-      name: settings.deviceName,
-      fingerprint: identity.fingerprint,
-    );
-    final token = await client.waitForPairApproval(identity.id);
-    await ref
-        .read(peersProvider.notifier)
-        .markPairedRemotely(
-          peer.copyWith(
-            certificateFingerprint: fingerprint,
-            sessionToken: token,
-            pairingMethod: PairingMethod.request,
-            pairedAt: DateTime.now(),
-            trustLevel: TrustLevel.paired,
-          ),
-        );
+    _pairingClient = client;
+    try {
+      await client.requestPair(
+        id: identity.id,
+        name: settings.deviceName,
+        fingerprint: identity.fingerprint,
+      );
+      final token = await client.waitForPairApproval(identity.id);
+      await ref
+          .read(peersProvider.notifier)
+          .markPairedRemotely(
+            peer.copyWith(
+              certificateFingerprint: fingerprint,
+              sessionToken: token,
+              pairingMethod: PairingMethod.request,
+              pairedAt: DateTime.now(),
+              trustLevel: TrustLevel.paired,
+            ),
+          );
+    } finally {
+      if (identical(_pairingClient, client)) _pairingClient = null;
+    }
+  }
+
+  /// Cancel an approval poll started by [requestPairWith].
+  void cancelPairRequest() => _pairingClient?.cancelPairWait();
+
+  /// Trigger an immediate announcement and mDNS query from the UI.
+  Future<void> rescan() async {
+    final current = await future;
+    await current.discovery.rescan();
   }
 
   /// Sender side: verify the receiver certificate, redeem the PIN, and store

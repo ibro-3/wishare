@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.4.1 — nearby scan and pairing reliability
+
+- Discovery now binds its UDP heartbeat, mDNS querier and mDNS responder to the
+  same LAN address used for QR pairing. On machines with a VPN or several
+  adapters, heartbeats and mDNS queries no longer leave through the default
+  route, which was a common reason nearby devices never appeared.
+- Added a **Scan again** action to the Send tab with a scanning indicator and
+  last-scan time. Discovery start/stop is now idempotent and settings toggles
+  restart it cleanly without leaking sockets or the Android multicast lock.
+- The mDNS responder now publishes an A record for its SRV target as well as
+  the instance name, so standard DNS-SD browsers can resolve Wishare services.
+  Cached mDNS records can no longer keep a device that left the network in the
+  nearby list.
+- Pairing polls survive transient network errors (including a not-yet-created
+  request) and can be cancelled from the Send tab while waiting for approval.
+  Devices discovered without a verifiable fingerprint now explain how to pair
+  by QR or manual entry instead of failing with a cryptic error. Manual entry
+  rejects loopback, link-local and non-LAN addresses before connecting.
+
 ## v0.4.0 — discovery and pairing fixes
 
 - Enabled IPv4 broadcast on the discovery socket and send heartbeats to each

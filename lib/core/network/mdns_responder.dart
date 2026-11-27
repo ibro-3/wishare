@@ -101,13 +101,14 @@ abstract final class MDnsProtocol {
       out.add(rdata);
     }
 
-    // Header: response, authoritative answer, 1 question, 1 answer, 3 extras.
+    // Header: response, authoritative answer, 1 question, 1 answer, 4 extras
+    // (SRV, TXT, A for the instance and A for the SRV target host).
     u16(question.id);
     u16(0x8400);
     u16(1);
     u16(1);
     u16(0);
-    u16(3);
+    u16(4);
     out.add(question.bytes);
 
     final instanceName = recordName ?? ptrTarget;
@@ -152,12 +153,23 @@ abstract final class MDnsProtocol {
       rdata: txtData.takeBytes(),
     );
 
+    final addressRecord = InternetAddress(address).rawAddress;
     record(
       name: MDnsProtocol.encodeName(instanceName),
       type: MDnsProtocol.a,
       klass: 1,
       ttl: 120,
-      rdata: InternetAddress(address).rawAddress,
+      rdata: addressRecord,
+    );
+    // Our own querier resolves the instance name above. Standard DNS-SD
+    // browsers first read SRV and then query its target, so publish that A
+    // record too.
+    record(
+      name: MDnsProtocol.encodeName('${identity.id}.local'),
+      type: MDnsProtocol.a,
+      klass: 1,
+      ttl: 120,
+      rdata: addressRecord,
     );
 
     return out.takeBytes();
@@ -186,10 +198,18 @@ class MDnsQuestion {
 }
 
 class MDnsResponder {
-  MDnsResponder({required this.identity, required this.address});
+  MDnsResponder({
+    required this.identity,
+    required this.address,
+    this.interface,
+  });
 
   final DeviceIdentity identity;
   final String address;
+
+  /// Optional interface to join the multicast group on. Pinning this to the
+  /// same interface as [address] keeps mDNS traffic off VPN/virtual adapters.
+  final NetworkInterface? interface;
 
   static final InternetAddress _multicast = InternetAddress('224.0.0.251');
   static const int _port = 5353;
@@ -201,14 +221,34 @@ class MDnsResponder {
   Future<void> start() async {
     if (_socket != null) return;
     try {
-      final socket = await RawDatagramSocket.bind(
-        InternetAddress.anyIPv4,
-        _port,
-        reuseAddress: true,
-        reusePort: true,
-        ttl: 255, // mDNS requires TTL 255.
-      );
-      socket.joinMulticast(_multicast);
+      final bindAddress = address == '127.0.0.1'
+          ? InternetAddress.anyIPv4
+          : InternetAddress(address);
+      RawDatagramSocket socket;
+      try {
+        socket = await RawDatagramSocket.bind(
+          bindAddress,
+          _port,
+          reuseAddress: true,
+          reusePort: true,
+          ttl: 255, // mDNS requires TTL 255.
+        );
+      } on SocketException {
+        // Fall back to the wildcard bind where a platform disallows binding
+        // mDNS to a specific interface address.
+        socket = await RawDatagramSocket.bind(
+          InternetAddress.anyIPv4,
+          _port,
+          reuseAddress: true,
+          reusePort: true,
+          ttl: 255,
+        );
+      }
+      if (interface != null) {
+        socket.joinMulticast(_multicast, interface);
+      } else {
+        socket.joinMulticast(_multicast);
+      }
       socket.listen((event) {
         if (event != RawSocketEvent.read) return;
         final datagram = socket.receive();
