@@ -7,6 +7,16 @@ import '../../core/theme/wishare_type.dart';
 import '../../shared/format.dart';
 import '../../shared/widgets/open_transfer_actions.dart';
 
+enum _HistoryFilter { all, sent, received }
+
+extension _HistoryFilterLabel on _HistoryFilter {
+  String get label => switch (this) {
+    _HistoryFilter.all => 'All',
+    _HistoryFilter.sent => 'Sent',
+    _HistoryFilter.received => 'Received',
+  };
+}
+
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
@@ -16,10 +26,19 @@ class HistoryScreen extends ConsumerStatefulWidget {
 
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   String? _selectedId;
+  _HistoryFilter _filter = _HistoryFilter.all;
 
   @override
   Widget build(BuildContext context) {
-    final transfers = ref.watch(transfersProvider).value ?? const <Transfer>[];
+    final all = ref.watch(transfersProvider).value ?? const <Transfer>[];
+    final transfers = all.where((transfer) {
+      return switch (_filter) {
+        _HistoryFilter.all => true,
+        _HistoryFilter.sent => transfer.direction == TransferDirection.outgoing,
+        _HistoryFilter.received =>
+          transfer.direction == TransferDirection.incoming,
+      };
+    }).toList();
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final twoPane = MediaQuery.sizeOf(context).width >= 840;
@@ -36,9 +55,15 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         children: [
           SizedBox(
             width: 360,
-            child: _list(context, transfers, text, scheme, ref, (transfer) {
-              setState(() => _selectedId = transfer.id);
-            }),
+            child: _list(
+              context,
+              transfers,
+              text,
+              scheme,
+              ref,
+              (transfer) => setState(() => _selectedId = transfer.id),
+              _emptyMessage,
+            ),
           ),
           VerticalDivider(width: 1, color: scheme.outlineVariant),
           Expanded(
@@ -54,14 +79,55 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         ],
       );
     } else {
-      body = _list(context, transfers, text, scheme, ref, (transfer) {
-        _showDetailSheet(context, transfer);
-      });
+      body = _list(
+        context,
+        transfers,
+        text,
+        scheme,
+        ref,
+        (transfer) => _showDetailSheet(context, transfer),
+        _emptyMessage,
+      );
     }
 
+    // From M3: the selected filter is a selection, so its label uses the
+    // emphasized type style rather than the baseline one.
+    final filters = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: SegmentedButton<_HistoryFilter>(
+        segments: [
+          for (final filter in _HistoryFilter.values)
+            ButtonSegment(
+              value: filter,
+              label: Text(
+                filter.label,
+                style: filter == _filter
+                    ? context.emphasizedText.labelLarge
+                    : text.labelLarge,
+              ),
+            ),
+        ],
+        selected: {_filter},
+        onSelectionChanged: (value) {
+          if (value.isNotEmpty) setState(() => _filter = value.first);
+        },
+      ),
+    );
+
     // Hosted inside the app shell, which supplies the app bar and safe area.
-    return body;
+    return Column(
+      children: [
+        filters,
+        Expanded(child: body),
+      ],
+    );
   }
+
+  String get _emptyMessage => switch (_filter) {
+    _HistoryFilter.all => 'No transfers yet',
+    _HistoryFilter.sent => 'No sent transfers yet',
+    _HistoryFilter.received => 'No received transfers yet',
+  };
 
   Widget _list(
     BuildContext context,
@@ -70,6 +136,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     ColorScheme scheme,
     WidgetRef ref,
     void Function(Transfer) onSelected,
+    String emptyMessage,
   ) {
     if (transfers.isEmpty) {
       return Center(
@@ -82,7 +149,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               color: scheme.onSurfaceVariant,
             ),
             const SizedBox(height: 12),
-            Text('No transfers yet', style: text.titleMedium),
+            Text(emptyMessage, style: text.titleMedium),
           ],
         ),
       );
