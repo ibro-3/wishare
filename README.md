@@ -7,9 +7,18 @@ No account, no cloud, no relay: devices on the same network discover each other,
 pair once with a QR code (certificate fingerprint + PIN), then exchange files
 directly over HTTPS with resumable chunks and SHA-256 verification.
 
-## Current status (v0.4.1)
+## Current status (v0.5.0)
 
 Implemented:
+
+- Drag-and-drop file and folder intake on desktop, transfer rate and ETA on
+  progress indicators, and "Open folder" / "Open file" actions for completed
+  incoming transfers.
+- Three top-level destinations (Send, Receive, History) with an M3 navigation
+  rail from 600dp up and a bottom bar below that. History can be filtered by
+  direction, and Settings remains a trailing app-bar action.
+- Accessibility semantics for device rows and progress, with automated
+  tap-target and contrast guideline tests for the main screens.
 
 - Update manager: checks the latest stable GitHub release once on startup
   (cached for 15 minutes, opt-out via Settings) and on demand. A small badge
@@ -23,10 +32,11 @@ Implemented:
   published tokens, colour-role mapping, dynamic colour with static baseline
   fallback, contrast levels, and spring values mapped to Flutter's
   `SpringSimulation`.
-- Shell: Send and Receive in a bottom navigation bar, with History and Settings
-  in the app bar's trailing edge and pairing in an extended FAB above the bar.
-  History, Settings, Pair and Scan are pushed pages, so back returns to the
-  previous tab; tab scroll positions are preserved. Send to lists every known
+- Shell: Send, Receive and History as top-level destinations — a bottom
+  navigation bar on compact widths and a navigation rail from 600dp up — with
+  Settings in the app bar's trailing edge and pairing in an extended FAB.
+  Settings, Pair and Scan are pushed pages, so back returns to the previous
+  destination; tab scroll positions are preserved. Send to lists every known
   device with paired ones on top: pick files or a folder and tap a paired
   device to send, or use the inline Pair button for nearby devices. Bottom
   sheets on phones, dialogs on desktop.
@@ -51,8 +61,9 @@ Still out of scope:
 
 - Packaged installers/signing (release CI attaches zips and APKs; MSIX and deb
   packaging templates live in `packaging/`).
-- A full manual accessibility audit (semantics are in place, but not audited
-  on screen readers).
+- A manual accessibility audit on hardware screen readers. Semantics and
+  automated tap-target/contrast guidelines are in place, but that is not the
+  same as a full manual audit.
 
 ## Run
 
@@ -99,17 +110,17 @@ flutter build linux --release
 # flutter build windows --release  (Windows host required)
 ```
 
-Publishing a GitHub release (v0.4.0):
+Publishing a GitHub release (v0.5.0):
 
 ```bash
-git tag v0.4.0 && git push origin v0.4.0
+git tag v0.5.0 && git push origin v0.5.0
 ```
 
 `.github/workflows/release.yml` builds Windows, Linux and Android in parallel,
-then attaches `wishare-0.4.0-windows-x64.zip`, `wishare-0.4.0-linux-x64.zip`,
-`wishare-0.4.0-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
+then attaches `wishare-0.5.0-windows-x64.zip`, `wishare-0.5.0-linux-x64.zip`,
+`wishare-0.5.0-android.apk`, the three per-ABI APKs and `SHA256SUMS.txt` to the
 release. The workflow can also be started manually with `workflow_dispatch` and
-a tag name. `dist/` holds the older local assets; v0.4.0 assets are produced by
+a tag name. `dist/` holds the older local assets; v0.5.0 assets are produced by
 CI when the tag is pushed. The update manager reads these releases through
 `https://api.github.com/repos/ibro-3/wishare/releases/latest`; keep asset names
 in the `wishare-<version>-<platform>.<ext>` form so the platform picker works.
@@ -185,6 +196,18 @@ lib/features        Devices, pairing, send, receive, transfers, settings UI
   reduced motion a subtle 100ms fade replaces hard cuts, while spring reveals
   and shape morphing stay disabled. Directional icons such as Send mirror in
   RTL; non-directional icons never do.
+- **Navigation:** from M3 — three top-level destinations, `surface container`
+  for the bar/rail, `secondary container` for the selected indicator, and the
+  compact/medium breakpoint at 600dp where the bar becomes a rail. From M3,
+  the selected History filter uses emphasized `label large`. My design
+  decisions (not in M3): keeping Settings as a trailing app-bar action, and
+  applying the same three destinations at every width rather than changing the
+  destination set by breakpoint.
+- **Accessibility:** from M3 — interactive targets carry semantic labels, and
+  progress is exposed as a labelled live value with the transferred/total byte
+  counts. My design decisions (not in M3): the exact label text for device rows
+  and the use of Flutter's automated tap-target/contrast guidelines as a gate;
+  no hardware screen-reader audit was performed.
 - **Golden tests:** `test/golden_test.dart` snapshots the theme showcase in
   light, dark and high contrast. Regenerate with
   `flutter test --update-goldens test/golden_test.dart`.

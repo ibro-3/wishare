@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.5.0 — everyday sharing
+
+- Desktop drag-and-drop on the Send tab: files and folders can be dropped
+  anywhere on the page and are expanded with the same depth/file limits as the
+  pickers. A translucent primary-container overlay confirms the drop target.
+- Completed incoming transfers now offer **Open folder** and, for a single
+  file, **Open file**. Android opens files through a FileProvider-backed
+  ACTION_VIEW intent; Linux and Windows use xdg-open and explorer.
+- Transfer progress shows the measured rate and an estimated time remaining in
+  the Send tab, the Receive tab and History details.
+- History is now a top-level destination beside Send and Receive (three
+  destinations, inside M3's guidance), with All / Sent / Received filters. The
+  selected filter uses emphasized type.
+- At widths of 600dp and above the bottom bar becomes a navigation rail; the
+  color roles and destinations are unchanged. The Pair FAB stays available.
+- Accessibility: device rows expose pairing state and address, progress is a
+  live region with byte counts, and automated tap-target/contrast guideline
+  tests cover Send, Receive and History. The full screen-reader audit remains
+  outstanding.
+
 ## v0.4.1 — nearby scan and pairing reliability
 
 - Discovery now binds its UDP heartbeat, mDNS querier and mDNS responder to the
