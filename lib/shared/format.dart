@@ -14,6 +14,24 @@ String formatSpeed(double bytesPerSecond) =>
     ? '${formatSize(bytesPerSecond.toInt())}/s'
     : '';
 
+/// Compact " · phase · rate · ETA" suffix shared by the send progress row and
+/// the transfer detail sheet. [leading] is used where byte counts are shown.
+String formatProgressDetails({
+  required double speed,
+  required int remainingBytes,
+  String? phase,
+  String? leading,
+}) {
+  final rate = formatSpeed(speed);
+  final eta = formatEta(remainingBytes, speed);
+  return [
+    if (leading != null && leading.isNotEmpty) leading,
+    if (phase != null && phase.isNotEmpty) phase,
+    if (rate.isNotEmpty) rate,
+    if (eta.isNotEmpty) 'ETA $eta',
+  ].map((part) => ' · $part').join();
+}
+
 /// Estimated time to transfer [remainingBytes] at [bytesPerSecond].
 /// Returns an empty string when there is not enough information to estimate.
 String formatEta(int remainingBytes, double bytesPerSecond) {

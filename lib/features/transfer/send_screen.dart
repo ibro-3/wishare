@@ -39,6 +39,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   bool _scanning = false;
   DateTime? _lastScan;
   double _progress = 0;
+  int _transferred = 0;
+  int _totalBytes = 0;
+  double _speed = 0;
   String? _error;
   String? _status;
 
@@ -168,13 +171,12 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             const SizedBox(height: 20),
             Semantics(
               label: 'Sending progress',
-              value: '${(_progress * 100).round()} percent',
+              value: '${(_progress * 100).round()} percent$_progressDetails',
               child: LinearProgressIndicator(value: _progress),
             ),
             const SizedBox(height: 8),
             Text(
-              '${(_progress * 100).toStringAsFixed(0)}%'
-              '${_status == null ? '' : ' · $_status'}',
+              '${(_progress * 100).toStringAsFixed(0)}%$_progressDetails',
               style: text.bodySmall,
             ),
           ],
@@ -250,6 +252,14 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       ),
     );
   }
+
+  /// Phase, rate and estimated time as one compact suffix for the progress
+  /// row. Empty pieces are omitted so an unknown rate never shows "0 B/s".
+  String get _progressDetails => formatProgressDetails(
+    speed: _speed,
+    remainingBytes: _totalBytes - _transferred,
+    phase: _status,
+  );
 
   Widget _deviceCard(
     Peer peer, {
@@ -403,6 +413,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       _busy = true;
       _error = null;
       _progress = 0;
+      _transferred = 0;
+      _totalBytes = 0;
+      _speed = 0;
       _status = 'Connecting';
     });
     Transfer? transfer;
@@ -416,6 +429,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         identity: identity,
         transferId: transferId,
       );
+      if (!mounted) return;
+      setState(() => _totalBytes = manifest.totalBytes);
       final client = WishareClient(
         host: peer.address,
         port: peer.port,
@@ -456,7 +471,8 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             _progress = manifest.totalBytes == 0
                 ? 1
                 : transferred / manifest.totalBytes;
-            _status = formatSpeed(speed);
+            _transferred = transferred;
+            _speed = speed;
           });
           ref
               .read(transfersProvider.notifier)

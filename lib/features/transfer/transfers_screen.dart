@@ -273,6 +273,13 @@ class TransferDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final progressDetails = formatProgressDetails(
+      speed: transfer.speedBytesPerSecond,
+      remainingBytes: transfer.totalBytes - transfer.transferredBytes,
+      leading:
+          '${formatSize(transfer.transferredBytes)} of '
+          '${formatSize(transfer.totalBytes)}',
+    );
     return SingleChildScrollView(
       controller: controller,
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
@@ -289,8 +296,15 @@ class TransferDetail extends StatelessWidget {
             const SizedBox(height: 16),
             Semantics(
               label: 'Transfer progress',
-              value: '${(transfer.progress * 100).round()} percent',
+              value:
+                  '${(transfer.progress * 100).round()} percent'
+                  '$progressDetails',
               child: LinearProgressIndicator(value: transfer.progress),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${(transfer.progress * 100).round()}%$progressDetails',
+              style: text.bodySmall,
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(

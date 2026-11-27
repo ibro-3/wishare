@@ -17,6 +17,27 @@ void main() {
     });
   });
 
+  group('formatProgressDetails', () {
+    test('omits unknown rate and empty pieces', () {
+      expect(
+        formatProgressDetails(speed: 0, remainingBytes: 1024, phase: 'Sending'),
+        ' · Sending',
+      );
+    });
+
+    test('joins phase, rate and ETA in a stable order', () {
+      expect(
+        formatProgressDetails(
+          speed: 1024,
+          remainingBytes: 2048,
+          phase: 'Transferring',
+          leading: '1.0 KB of 3.0 KB',
+        ),
+        ' · 1.0 KB of 3.0 KB · Transferring · 1.0 KB/s · ETA 2s',
+      );
+    });
+  });
+
   group('formatEta', () {
     test('empty without remaining bytes or a rate', () {
       expect(formatEta(0, 1024), isEmpty);
