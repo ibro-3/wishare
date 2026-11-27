@@ -5,6 +5,7 @@ import '../../core/models/transfer.dart';
 import '../../core/state/providers.dart';
 import '../../core/theme/wishare_type.dart';
 import '../../shared/format.dart';
+import '../../shared/widgets/open_transfer_actions.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -312,6 +313,10 @@ class TransferDetail extends StatelessWidget {
               icon: const Icon(Icons.cancel_outlined),
               label: const Text('Cancel transfer'),
             ),
+          ],
+          if (transfer.status == TransferStatus.completed) ...[
+            const SizedBox(height: 8),
+            OpenTransferActions(transfer: transfer),
           ],
           if (transfer.error != null) ...[
             const SizedBox(height: 16),

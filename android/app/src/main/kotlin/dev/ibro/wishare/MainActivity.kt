@@ -2,13 +2,16 @@ package dev.ibro.wishare
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Environment
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -19,6 +22,15 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "enqueue" -> enqueueDownload(call, result)
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            OPEN_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openFile" -> openFile(call, result)
                 else -> result.notImplemented()
             }
         }
@@ -77,8 +89,41 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun openFile(call: MethodCall, result: MethodChannel.Result) {
+        val path = call.argument<String>("path")
+        if (path.isNullOrBlank()) {
+            result.error("invalid_arguments", "path is required", null)
+            return
+        }
+        val file = File(path)
+        if (!file.exists()) {
+            result.success(false)
+            return
+        }
+        try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, contentResolver.getType(uri) ?: "*/*")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (intent.resolveActivity(packageManager) == null) {
+                result.success(false)
+                return
+            }
+            startActivity(intent)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("open_failed", e.message, null)
+        }
+    }
+
     private companion object {
         const val DOWNLOAD_CHANNEL = "dev.ibro.wishare/downloads"
         const val MULTICAST_CHANNEL = "dev.ibro.wishare/multicast"
+        const val OPEN_CHANNEL = "dev.ibro.wishare/open"
     }
 }

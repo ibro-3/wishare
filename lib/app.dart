@@ -19,6 +19,7 @@ import 'features/settings/settings_screen.dart';
 import 'features/transfer/receive_screen.dart';
 import 'features/transfer/send_screen.dart';
 import 'features/transfer/transfers_screen.dart';
+import 'shared/widgets/open_transfer_actions.dart';
 import 'shared/widgets/spring_reveal.dart';
 
 final appRouter = GoRouter(
@@ -389,8 +390,18 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
         ),
         title: const Text('Transfer complete'),
-        content: Text(
-          '${transfer.files.length} items sent to ${transfer.peerName}.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${transfer.files.length} items sent to ${transfer.peerName}.',
+            ),
+            if (transfer.saveDirectory != null) ...[
+              const SizedBox(height: 16),
+              OpenTransferActions(transfer: transfer),
+            ],
+          ],
         ),
         actions: [
           FilledButton(
