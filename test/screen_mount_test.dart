@@ -79,8 +79,15 @@ void main() {
     expect(find.text('Paired PC'), findsOneWidget);
     expect(find.text('Nearby laptop'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Pair'), findsOneWidget);
-    final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
-    expect((tiles.first.title as Text).data, 'Paired PC');
+    final firstTile = find.byType(ListTile).first;
+    final titleText =
+        find
+                .descendant(of: firstTile, matching: find.byType(Text))
+                .evaluate()
+                .first
+                .widget
+            as Text;
+    expect(titleText.data, 'Paired PC');
   });
 
   testWidgets(

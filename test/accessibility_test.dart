@@ -92,7 +92,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final semanticsHandle = await tester.ensureSemantics();
+    final semanticsHandle = tester.ensureSemantics();
     expect(
       find.bySemanticsLabel(RegExp(r'Living room PC, paired device')),
       findsOneWidget,
@@ -117,7 +117,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final semanticsHandle = await tester.ensureSemantics();
+    final semanticsHandle = tester.ensureSemantics();
 
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
