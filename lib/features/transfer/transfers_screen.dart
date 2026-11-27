@@ -59,10 +59,8 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       });
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('History')),
-      body: SafeArea(child: body),
-    );
+    // Hosted inside the app shell, which supplies the app bar and safe area.
+    return body;
   }
 
   Widget _list(

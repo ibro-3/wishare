@@ -16,6 +16,10 @@ void main() {
   testWidgets('sub-flows push above the shell and back restores the tab', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final theme = WishareTheme.build(
       WishareTheme.baseline(Brightness.light),
       contrast: WiContrast.standard,
@@ -31,13 +35,13 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
 
-    // History is a pushed page, so the shell stays mounted underneath.
-    await tester.tap(find.byTooltip('Transfer history'));
+    // History is now a top-level destination inside the same shell.
+    await tester.tap(find.byIcon(Icons.history_outlined));
     await tester.pumpAndSettle();
     expect(find.text('History'), findsWidgets);
-    expect(find.byType(NavigationBar, skipOffstage: false), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
 
-    appRouter.pop();
+    appRouter.go('/send');
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
 
@@ -83,6 +87,34 @@ void main() {
     expect(find.text('Show pairing code'), findsWidgets);
     // The scanner is now underneath the pushed generator page.
     expect(find.byTooltip('Show my code'), findsNothing);
+  });
+
+  testWidgets('uses a navigation rail at medium widths', (tester) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(() => appRouter.go('/send'));
+
+    final theme = WishareTheme.build(
+      WishareTheme.baseline(Brightness.light),
+      contrast: WiContrast.standard,
+      reduceMotion: true,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp.router(routerConfig: appRouter, theme: theme),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.history_outlined));
+    await tester.pumpAndSettle();
+    expect(find.text('History'), findsWidgets);
+    expect(find.byType(NavigationRail), findsOneWidget);
   });
 
   testWidgets('top-level fade waits for the outgoing screen', (tester) async {

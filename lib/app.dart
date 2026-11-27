@@ -41,14 +41,15 @@ final appRouter = GoRouter(
           pageBuilder: (context, state) =>
               _topLevelPage(context, const ReceiveScreen(), state),
         ),
+        GoRoute(
+          path: '/history',
+          pageBuilder: (context, state) =>
+              _topLevelPage(context, const HistoryScreen(), state),
+        ),
       ],
     ),
     // Sub-flows are pushed above the shell so system/AppBar back returns to
     // whichever top-level destination the user came from.
-    GoRoute(
-      path: '/history',
-      pageBuilder: (context, state) => _subPage(const HistoryScreen(), state),
-    ),
     GoRoute(
       path: '/settings',
       pageBuilder: (context, state) => _subPage(const SettingsScreen(), state),
@@ -168,10 +169,23 @@ class _AppShellState extends ConsumerState<AppShell> {
     });
   }
 
-  int get _index =>
-      GoRouterState.of(context).uri.path.startsWith('/receive') ? 1 : 0;
+  int get _index {
+    final path = GoRouterState.of(context).uri.path;
+    if (path.startsWith('/receive')) return 1;
+    if (path.startsWith('/history')) return 2;
+    return 0;
+  }
 
-  String get _title => _index == 0 ? 'Send' : 'Receive';
+  String get _title => switch (_index) {
+    0 => 'Send',
+    1 => 'Receive',
+    _ => 'History',
+  };
+
+  /// From M3: navigation belongs at the bottom on compact widths and moves
+  /// to a rail at 600dp and up (the compact/medium breakpoint). The destination
+  /// roles stay the same across breakpoints.
+  bool get _wide => MediaQuery.sizeOf(context).width >= 600;
 
   @override
   Widget build(BuildContext context) {
@@ -214,11 +228,6 @@ class _AppShellState extends ConsumerState<AppShell> {
         title: Text(_title, style: Theme.of(context).textTheme.titleLarge),
         actions: [
           IconButton(
-            tooltip: 'Transfer history',
-            icon: const Icon(Icons.history),
-            onPressed: () => context.push('/history'),
-          ),
-          IconButton(
             tooltip: updateAvailable
                 ? 'Settings, update available'
                 : 'Settings',
@@ -230,34 +239,13 @@ class _AppShellState extends ConsumerState<AppShell> {
           ),
         ],
       ),
-      // From M3: navigation belongs at the bottom for reachability. Two
-      // destinations is a deliberate deviation from the 3–5 nav bar guidance.
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (index) =>
-            context.go(index == 0 ? '/send' : '/receive'),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.send_outlined),
-            selectedIcon: const Icon(Icons.send),
-            label: 'Send',
-          ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: pendingCount > 0,
-              label: Text(pendingCount > 9 ? '9+' : '$pendingCount'),
-              child: const Icon(Icons.inbox_outlined),
-            ),
-            selectedIcon: Badge(
-              isLabelVisible: pendingCount > 0,
-              label: Text(pendingCount > 9 ? '9+' : '$pendingCount'),
-              child: const Icon(Icons.inbox),
-            ),
-            label: 'Receive',
-          ),
+      bottomNavigationBar: _wide ? null : _navigationBar(pendingCount),
+      body: Row(
+        children: [
+          if (_wide) _navigationRail(pendingCount),
+          Expanded(child: SafeArea(child: widget.child)),
         ],
       ),
-      body: SafeArea(child: widget.child),
       // From M3: use an extended FAB when the icon alone is ambiguous. The
       // label makes pairing discoverable; title medium is the small extended
       // FAB's type style. Anchored bottom-trailing, mirrored in RTL.
@@ -281,7 +269,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         const SingleActivator(LogicalKeyboardKey.digit2, control: true): () =>
             context.go('/receive'),
         const SingleActivator(LogicalKeyboardKey.digit3, control: true): () =>
-            context.push('/history'),
+            context.go('/history'),
         const SingleActivator(LogicalKeyboardKey.digit4, control: true): () =>
             context.push('/settings'),
         const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
@@ -290,6 +278,62 @@ class _AppShellState extends ConsumerState<AppShell> {
       child: shell,
     );
   }
+
+  Widget _receiveIcon(bool selected, int pendingCount) => Badge(
+    isLabelVisible: pendingCount > 0,
+    label: Text(pendingCount > 9 ? '9+' : '$pendingCount'),
+    child: Icon(selected ? Icons.inbox : Icons.inbox_outlined),
+  );
+
+  void _selectDestination(int index) => context.go(switch (index) {
+    1 => '/receive',
+    2 => '/history',
+    _ => '/send',
+  });
+
+  Widget _navigationBar(int pendingCount) => NavigationBar(
+    selectedIndex: _index,
+    onDestinationSelected: _selectDestination,
+    destinations: [
+      NavigationDestination(
+        icon: const Icon(Icons.send_outlined),
+        selectedIcon: const Icon(Icons.send),
+        label: 'Send',
+      ),
+      NavigationDestination(
+        icon: _receiveIcon(false, pendingCount),
+        selectedIcon: _receiveIcon(true, pendingCount),
+        label: 'Receive',
+      ),
+      const NavigationDestination(
+        icon: Icon(Icons.history_outlined),
+        selectedIcon: Icon(Icons.history),
+        label: 'History',
+      ),
+    ],
+  );
+
+  Widget _navigationRail(int pendingCount) => NavigationRail(
+    selectedIndex: _index,
+    onDestinationSelected: _selectDestination,
+    destinations: [
+      const NavigationRailDestination(
+        icon: Icon(Icons.send_outlined),
+        selectedIcon: Icon(Icons.send),
+        label: Text('Send'),
+      ),
+      NavigationRailDestination(
+        icon: _receiveIcon(false, pendingCount),
+        selectedIcon: _receiveIcon(true, pendingCount),
+        label: const Text('Receive'),
+      ),
+      const NavigationRailDestination(
+        icon: Icon(Icons.history_outlined),
+        selectedIcon: Icon(Icons.history),
+        label: Text('History'),
+      ),
+    ],
+  );
 
   /// Show one pairing prompt at a time, then move to the next queued request.
   void _maybeShowPairRequest() {
