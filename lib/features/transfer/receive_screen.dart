@@ -150,8 +150,11 @@ class ReceiveScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     Semantics(
-                      label: 'Transfer progress',
-                      value: '${(transfer.progress * 100).round()} percent',
+                      label: 'Receiving from ${transfer.peerName}',
+                      value:
+                          '${(transfer.progress * 100).round()} percent, '
+                          '${formatSize(transfer.transferredBytes)} of '
+                          '${formatSize(transfer.totalBytes)}',
                       child: LinearProgressIndicator(value: transfer.progress),
                     ),
                   ],

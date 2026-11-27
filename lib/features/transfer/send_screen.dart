@@ -231,7 +231,13 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                   ],
                 ),
                 if (_scanning)
-                  Text('Scanning nearby devices…', style: text.bodySmall)
+                  Semantics(
+                    label: 'Scanning nearby devices',
+                    child: Text(
+                      'Scanning nearby devices…',
+                      style: text.bodySmall,
+                    ),
+                  )
                 else if (_lastScan != null)
                   Text(
                     'Last scan: ${TimeOfDay.fromDateTime(_lastScan!).format(context)}',
@@ -253,12 +259,16 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                 if (networkError != null && networkError.isNotEmpty)
                   const SizedBox(height: 8),
                 if (devices.isEmpty)
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'No devices found yet. Use the Pair button to add one.',
-                        style: text.bodySmall,
+                  Semantics(
+                    label: 'No devices found. Use the Pair button to add one.',
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'No devices found yet. '
+                          'Use the Pair button to add one.',
+                          style: text.bodySmall,
+                        ),
                       ),
                     ),
                   )
@@ -350,8 +360,16 @@ class _SendScreenState extends ConsumerState<SendScreen> {
               : scheme.onSecondaryContainer,
           child: const Icon(Icons.devices_other),
         ),
-        title: Text(peer.name, style: text.titleMedium),
-        subtitle: Text(peer.endpoint, style: text.bodySmall),
+        title: Semantics(
+          label:
+              '${peer.name}, '
+              '${peer.isPaired ? 'paired device' : 'nearby device'}',
+          child: Text(peer.name, style: text.titleMedium),
+        ),
+        subtitle: Semantics(
+          label: 'Address ${peer.endpoint}',
+          child: Text(peer.endpoint, style: text.bodySmall),
+        ),
         // Paired rows send on tap; unpaired rows pair inline.
         trailing: peer.isPaired
             ? const WiDirectionalIcon(Icons.send)
