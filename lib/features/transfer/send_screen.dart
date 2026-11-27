@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -37,6 +38,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   String? _celebratedPeerId;
   bool _busy = false;
   bool _scanning = false;
+  bool _dragging = false;
   DateTime? _lastScan;
   double _progress = 0;
   int _transferred = 0;
@@ -90,167 +92,237 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     _celebratedPeerId ??= devices.isEmpty ? null : devices.first.id;
     final reduceMotion = context.wiReduceMotion;
 
-    return SingleChildScrollView(
-      key: const PageStorageKey<String>('send'),
-      // Leave room for the navigation bar and the pairing FAB above it.
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return DropTarget(
+      // The plugin keeps listening even when a page is pushed on top, so the
+      // target is disabled behind sub-flows and during a transfer.
+      enable: !_busy && (ModalRoute.of(context)?.isCurrent ?? true),
+      onDragEntered: (_) => setState(() => _dragging = true),
+      onDragExited: (_) => setState(() => _dragging = false),
+      onDragDone: _addDropped,
+      child: Stack(
         children: [
-          Text('Files and folders', style: text.titleMedium),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickFiles,
-                  icon: const Icon(Icons.attach_file),
-                  label: const Text('Files'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickFolder,
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('Folder'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_selected.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                'Nothing selected yet',
-                style: text.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            )
-          else
-            Card(
-              child: Column(
-                children: [
-                  for (final entry in _selected.take(12))
-                    ListTile(
-                      leading: Icon(
-                        entry.isDirectory
-                            ? Icons.folder
-                            : Icons.insert_drive_file_outlined,
-                        color: scheme.onSurfaceVariant,
+          SingleChildScrollView(
+            key: const PageStorageKey<String>('send'),
+            // Leave room for the navigation bar and the pairing FAB above it.
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Files and folders', style: text.titleMedium),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickFiles,
+                        icon: const Icon(Icons.attach_file),
+                        label: const Text('Files'),
                       ),
-                      title: Text(
-                        entry.relativePath,
-                        style: text.bodyMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: entry.isDirectory
-                          ? null
-                          : Text(formatSize(entry.size), style: text.bodySmall),
                     ),
-                  if (_selected.length > 12)
-                    Padding(
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickFolder,
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('Folder'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (_selected.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLowest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Nothing selected yet',
+                      style: text.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else
+                  Card(
+                    child: Column(
+                      children: [
+                        for (final entry in _selected.take(12))
+                          ListTile(
+                            leading: Icon(
+                              entry.isDirectory
+                                  ? Icons.folder
+                                  : Icons.insert_drive_file_outlined,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            title: Text(
+                              entry.relativePath,
+                              style: text.bodyMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: entry.isDirectory
+                                ? null
+                                : Text(
+                                    formatSize(entry.size),
+                                    style: text.bodySmall,
+                                  ),
+                          ),
+                        if (_selected.length > 12)
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Text(
+                              '+ ${_selected.length - 12} more',
+                              style: text.bodySmall,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Text('Total: ${formatSize(total)}', style: text.labelLarge),
+                if (_progress > 0) ...[
+                  const SizedBox(height: 20),
+                  Semantics(
+                    label: 'Sending progress',
+                    value:
+                        '${(_progress * 100).round()} percent$_progressDetails',
+                    child: LinearProgressIndicator(value: _progress),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${(_progress * 100).toStringAsFixed(0)}%$_progressDetails',
+                    style: text.bodySmall,
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    _error!,
+                    style: text.bodySmall?.copyWith(color: scheme.error),
+                  ),
+                ],
+                if (_selected.isNotEmpty && !_busy) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Tap a device below to send these items',
+                    style: text.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Text('Send to', style: text.titleMedium),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: 'Scan again',
+                      icon: _scanning
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.radar_outlined),
+                      onPressed: _scanning ? null : _scanAgain,
+                    ),
+                  ],
+                ),
+                if (_scanning)
+                  Text('Scanning nearby devices…', style: text.bodySmall)
+                else if (_lastScan != null)
+                  Text(
+                    'Last scan: ${TimeOfDay.fromDateTime(_lastScan!).format(context)}',
+                    style: text.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                if (networkError != null && networkError.isNotEmpty)
+                  Card(
+                    child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Text(
-                        '+ ${_selected.length - 12} more',
+                        'Discovery: $networkError',
+                        style: text.bodySmall?.copyWith(color: scheme.error),
+                      ),
+                    ),
+                  ),
+                if (networkError != null && networkError.isNotEmpty)
+                  const SizedBox(height: 8),
+                if (devices.isEmpty)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'No devices found yet. Use the Pair button to add one.',
                         style: text.bodySmall,
                       ),
                     ),
-                ],
-              ),
+                  )
+                else
+                  for (final peer in devices)
+                    _deviceCard(
+                      peer,
+                      scheme: scheme,
+                      text: text,
+                      reveal: peer.id == _celebratedPeerId && !reduceMotion,
+                    ),
+              ],
             ),
-          const SizedBox(height: 12),
-          Text('Total: ${formatSize(total)}', style: text.labelLarge),
-          if (_progress > 0) ...[
-            const SizedBox(height: 20),
-            Semantics(
-              label: 'Sending progress',
-              value: '${(_progress * 100).round()} percent$_progressDetails',
-              child: LinearProgressIndicator(value: _progress),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${(_progress * 100).toStringAsFixed(0)}%$_progressDetails',
-              style: text.bodySmall,
-            ),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 16),
-            Text(_error!, style: text.bodySmall?.copyWith(color: scheme.error)),
-          ],
-          if (_selected.isNotEmpty && !_busy) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Tap a device below to send these items',
-              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-              textAlign: TextAlign.center,
-            ),
-          ],
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Text('Send to', style: text.titleMedium),
-              const Spacer(),
-              IconButton(
-                tooltip: 'Scan again',
-                icon: _scanning
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.radar_outlined),
-                onPressed: _scanning ? null : _scanAgain,
-              ),
-            ],
           ),
-          if (_scanning)
-            Text('Scanning nearby devices…', style: text.bodySmall)
-          else if (_lastScan != null)
-            Text(
-              'Last scan: ${TimeOfDay.fromDateTime(_lastScan!).format(context)}',
-              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          const SizedBox(height: 8),
-          if (networkError != null && networkError.isNotEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  'Discovery: $networkError',
-                  style: text.bodySmall?.copyWith(color: scheme.error),
+          if (_dragging)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ColoredBox(
+                  color: scheme.primaryContainer.withValues(alpha: 0.40),
+                  child: Center(
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Drop files or folders to send',
+                          style: text.titleMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          if (networkError != null && networkError.isNotEmpty)
-            const SizedBox(height: 8),
-          if (devices.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'No devices found yet. Use the Pair button to add one.',
-                  style: text.bodySmall,
-                ),
-              ),
-            )
-          else
-            for (final peer in devices)
-              _deviceCard(
-                peer,
-                scheme: scheme,
-                text: text,
-                reveal: peer.id == _celebratedPeerId && !reduceMotion,
-              ),
         ],
       ),
     );
+  }
+
+  /// Expand dropped paths with the same collector used by the pickers, so
+  /// dropped folders are traversed with the configured depth/file limits.
+  Future<void> _addDropped(DropDoneDetails details) async {
+    final paths = details.files
+        .map((item) => item.path)
+        .whereType<String>()
+        .toList();
+    if (paths.isEmpty) return;
+    final settings = await ref.read(settingsProvider.future);
+    if (!mounted) return;
+    try {
+      final entries = await TransferCoordinator(settings).collect(paths);
+      if (!mounted) return;
+      setState(() {
+        _dragging = false;
+        _selected.addAll(entries);
+        _error = null;
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _dragging = false;
+        _error = 'Could not read dropped items: $error';
+      });
+    }
   }
 
   /// Phase, rate and estimated time as one compact suffix for the progress
